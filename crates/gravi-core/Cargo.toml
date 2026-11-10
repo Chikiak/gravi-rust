@@ -1,0 +1,8 @@
+[package]
+name = "gravi-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# std::simd (portable_simd) se habilita con RUSTFLAGS="-Z portable-simd" en nightly,
+# o en stable 1.90+ vía feature gate. Por ahora solo std.

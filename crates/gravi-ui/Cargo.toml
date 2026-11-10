@@ -1,0 +1,8 @@
+[package]
+name = "gravi-ui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gravi-core = { path = "../gravi-core" }
+raylib = "5.0"
