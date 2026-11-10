@@ -1,0 +1,23 @@
+//! PhysicsConstants — valores por defecto del motor de gravitación.
+//! (Issue 1: PODs y constantes — base mínima para SimulationStore.)
+
+/// Constantes físicas por defecto del motor N-body.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PhysicsConstants {
+    /// Constante de gravitación G.
+    pub g: f32,
+    /// Suavizado (softening) para evitar singularidades.
+    pub softening: f32,
+    /// Amortiguamiento (damping) aplicado en la integración.
+    pub damping: f32,
+}
+
+impl Default for PhysicsConstants {
+    fn default() -> Self {
+        Self {
+            g: 1500.0,
+            softening: 8.0,
+            damping: 1.0,
+        }
+    }
+}
