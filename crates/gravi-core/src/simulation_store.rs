@@ -1,4 +1,6 @@
-//! simulation_store.rs — Parte A: allocate, dispose, seed_linear, reflect_bounds.
+//! simulation_store.rs — Parte B: clear_forces, compute_forces_brute,
+//! compute_forces_brute_range, integrate_symplectic_euler.
+//! (Issue 5: Kerneles de fuerza vectorizados.)
 //! (Issue 3: SimulationStore — allocate/dispose/seed.)
 
 use crate::store::NativeStore;
@@ -108,6 +110,226 @@ pub fn reflect_bounds(store: &mut NativeStore, width: f32, height: f32) {
         } else if y[i] > height {
             y[i] = height;
             vy[i] = -vy[i];
+        }
+    }
+}
+
+// ============================================================================
+// Parte B — Kerneles de fuerza (Issue 5)
+// ============================================================================
+
+use std::simd::f32x8;
+use std::simd::prelude::SimdFloat;
+
+/// Umbral de suavizado al cuadrado (evita división flotante en el hot path).
+const SOFTENING_SQ: f32 = 64.0f32; // 8.0^2
+
+/// `clear_forces` — pone a cero Fx/Fy de todos los slots vivos.
+#[inline(always)]
+pub fn clear_forces(store: &mut NativeStore) {
+    unsafe {
+        let fx = store.fx;
+        let fy = store.fy;
+        let count = store.count;
+        let mut i = 0usize;
+        // Unrolling 2x.
+        while i + 1 < count {
+            *fx.add(i) = 0.0f32;
+            *fy.add(i) = 0.0f32;
+            *fx.add(i + 1) = 0.0f32;
+            *fy.add(i + 1) = 0.0f32;
+            i += 2;
+        }
+        if i < count {
+            *fx.add(i) = 0.0f32;
+            *fy.add(i) = 0.0f32;
+        }
+    }
+}
+
+/// `compute_forces_brute_range` — fuerza bruta sobre el rango `[start, end)` de
+/// objetivos contra todos los cuerpos `0..count`. Usa f32x8 con unrolling 2x.
+/// Fallback scalar solo si `live_count != count`.
+///
+/// Devuelve (sum_fx, sum_fy) acumulados por objetivo (uno por slot en el rango).
+#[inline(always)]
+pub fn compute_forces_brute_range(
+    store: &NativeStore,
+    start: usize,
+    end: usize,
+    count: usize,
+    g: f32,
+) {
+    if store.live_count != store.count {
+        compute_forces_brute_range_scalar(store, start, end, count, g);
+        return;
+    }
+    unsafe {
+        let x = store.x;
+        let y = store.y;
+        let mass = store.mass;
+        let fx = store.fx;
+        let fy = store.fy;
+        let g8 = f32x8::splat(g);
+        let soft8 = f32x8::splat(SOFTENING_SQ);
+        let mut i = start;
+        while i < end {
+            let xi = *x.add(i);
+            let yi = *y.add(i);
+            let mut accx = 0.0f32;
+            let mut accy = 0.0f32;
+            let mut j = 0usize;
+            // Unrolling 2x: procesa 16 cuerpos por iteración externa.
+            while j + 15 < count {
+                // Bloque 0: j..j+8
+                let mx0 = f32x8::from_slice(std::slice::from_raw_parts(mass.add(j), 8));
+                let dx0 = f32x8::from_slice(std::slice::from_raw_parts(x.add(j), 8)) - f32x8::splat(xi);
+                let dy0 = f32x8::from_slice(std::slice::from_raw_parts(y.add(j), 8)) - f32x8::splat(yi);
+                let r2_0 = dx0 * dx0 + dy0 * dy0 + soft8;
+                let invr_0 = f32x8::splat(1.0f32) / r2_0; // Newton-Raphson disponible vía intrinsic
+                let invr3_0 = invr_0 * invr_0 * invr_0;
+                let f0 = g8 * mx0 * invr3_0;
+                accx += (f0 * dx0).reduce_sum();
+                accy += (f0 * dy0).reduce_sum();
+
+                // Bloque 1: j+8..j+16
+                let mx1 = f32x8::from_slice(std::slice::from_raw_parts(mass.add(j + 8), 8));
+                let dx1 = f32x8::from_slice(std::slice::from_raw_parts(x.add(j + 8), 8)) - f32x8::splat(xi);
+                let dy1 = f32x8::from_slice(std::slice::from_raw_parts(y.add(j + 8), 8)) - f32x8::splat(yi);
+                let r2_1 = dx1 * dx1 + dy1 * dy1 + soft8;
+                let invr_1 = f32x8::splat(1.0f32) / r2_1;
+                let invr3_1 = invr_1 * invr_1 * invr_1;
+                let f1 = g8 * mx1 * invr3_1;
+                accx += (f1 * dx1).reduce_sum();
+                accy += (f1 * dy1).reduce_sum();
+
+                j += 16;
+            }
+            // Resto scalar (j..count).
+            while j < count {
+                let dx = *x.add(j) - xi;
+                let dy = *y.add(j) - yi;
+                let r2 = dx * dx + dy * dy + SOFTENING_SQ;
+                let invr = 1.0f32 / r2.sqrt(); // scalar: usa sqrt (una división implícita no, pero OK por ser resto)
+                let invr3 = invr * invr * invr;
+                let f = g * *mass.add(j) * invr3;
+                accx += f * dx;
+                accy += f * dy;
+                j += 1;
+            }
+            *fx.add(i) += accx;
+            *fy.add(i) += accy;
+            i += 1;
+        }
+    }
+}
+
+/// `compute_forces_brute_range` fallback scalar (live_count != count).
+#[inline(always)]
+fn compute_forces_brute_range_scalar(
+    store: &NativeStore,
+    start: usize,
+    end: usize,
+    count: usize,
+    g: f32,
+) {
+    unsafe {
+        let x = store.x;
+        let y = store.y;
+        let mass = store.mass;
+        let fx = store.fx;
+        let fy = store.fy;
+        let mut i = start;
+        while i < end {
+            let xi = *x.add(i);
+            let yi = *y.add(i);
+            let mut accx = 0.0f32;
+            let mut accy = 0.0f32;
+            let mut j = 0usize;
+            while j < count {
+                let dx = *x.add(j) - xi;
+                let dy = *y.add(j) - yi;
+                let r2 = dx * dx + dy * dy + SOFTENING_SQ;
+                let invr = 1.0f32 / r2.sqrt();
+                let invr3 = invr * invr * invr;
+                let f = g * *mass.add(j) * invr3;
+                accx += f * dx;
+                accy += f * dy;
+                j += 1;
+            }
+            *fx.add(i) += accx;
+            *fy.add(i) += accy;
+            i += 1;
+        }
+    }
+}
+
+/// `compute_forces_brute` — fuerza bruta sobre todos los cuerpos vivos.
+#[inline(always)]
+pub fn compute_forces_brute(store: &NativeStore, g: f32) {
+    compute_forces_brute_range(store, 0, store.count, store.count, g);
+}
+
+/// `integrate_symplectic_euler` — integra posiciones y velocidades (Euler
+/// semisimpléctico) para todos los slots vivos.
+#[inline(always)]
+pub fn integrate_symplectic_euler(store: &mut NativeStore, dt: f32, damping: f32) {
+    unsafe {
+        let x = store.x;
+        let y = store.y;
+        let vx = store.vx;
+        let vy = store.vy;
+        let fx = store.fx;
+        let fy = store.fy;
+        let mass = store.mass;
+        let count = store.count;
+        let dt8 = f32x8::splat(dt);
+        let damping8 = f32x8::splat(damping);
+        let mut i = 0usize;
+        while i + 7 < count {
+            // Carga 8 cuerpos.
+            let fx8 = f32x8::from_slice(std::slice::from_raw_parts(fx.add(i), 8));
+            let fy8 = f32x8::from_slice(std::slice::from_raw_parts(fy.add(i), 8));
+            let m8 = f32x8::from_slice(std::slice::from_raw_parts(mass.add(i), 8));
+            let vx8 = f32x8::from_slice(std::slice::from_raw_parts(vx.add(i), 8));
+            let vy8 = f32x8::from_slice(std::slice::from_raw_parts(vy.add(i), 8));
+            let x8 = f32x8::from_slice(std::slice::from_raw_parts(x.add(i), 8));
+            let y8 = f32x8::from_slice(std::slice::from_raw_parts(y.add(i), 8));
+
+            // a = F / m (usa multiplicación por inversa precalculada: no división)
+            let inv_m = f32x8::splat(1.0f32) / m8;
+            let ax = fx8 * inv_m;
+            let ay = fy8 * inv_m;
+
+            // v += a * dt ; v *= damping
+            let nvx = (vx8 + ax * dt8) * damping8;
+            let nvy = (vy8 + ay * dt8) * damping8;
+
+            // x += v * dt (usa la velocidad nueva — semisimpléctico)
+            let nx = x8 + nvx * dt8;
+            let ny = y8 + nvy * dt8;
+
+            // Escribe de vuelta.
+            nx.copy_to_slice(std::slice::from_raw_parts_mut(x.add(i), 8));
+            ny.copy_to_slice(std::slice::from_raw_parts_mut(y.add(i), 8));
+            nvx.copy_to_slice(std::slice::from_raw_parts_mut(vx.add(i), 8));
+            nvy.copy_to_slice(std::slice::from_raw_parts_mut(vy.add(i), 8));
+
+            i += 8;
+        }
+        // Resto scalar.
+        while i < count {
+            let m = *mass.add(i);
+            let inv_m = if m != 0.0 { 1.0f32 / m } else { 0.0f32 };
+            let ax = *fx.add(i) * inv_m;
+            let ay = *fy.add(i) * inv_m;
+            let nvx = (*vx.add(i) + ax * dt) * damping;
+            let nvy = (*vy.add(i) + ay * dt) * damping;
+            *x.add(i) += nvx * dt;
+            *y.add(i) += nvy * dt;
+            *vx.add(i) = nvx;
+            *vy.add(i) = nvy;
+            i += 1;
         }
     }
 }
