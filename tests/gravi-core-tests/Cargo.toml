@@ -9,3 +9,47 @@ gravi-core = { path = "../../crates/gravi-core" }
 [[test]]
 name = "integration"
 path = "src/integration.rs"
+
+[[test]]
+name = "quadtree_build"
+path = "src/quadtree_build.rs"
+
+[[test]]
+name = "quadtree_bh"
+path = "src/quadtree_bh.rs"
+
+[[test]]
+name = "spatial_grid"
+path = "src/spatial_grid.rs"
+
+[[test]]
+name = "collisions"
+path = "src/collisions.rs"
+
+[[test]]
+name = "scenario"
+path = "src/scenario.rs"
+
+[[test]]
+name = "verifier"
+path = "src/verifier.rs"
+
+[[test]]
+name = "parallel"
+path = "src/parallel.rs"
+
+[[test]]
+name = "forces_brute"
+path = "src/forces_brute.rs"
+
+[[test]]
+name = "lifecycle"
+path = "src/lifecycle.rs"
+
+[[test]]
+name = "diagnostics"
+path = "src/diagnostics.rs"
+
+[[test]]
+name = "heap"
+path = "src/heap.rs"
