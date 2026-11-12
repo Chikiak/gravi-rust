@@ -275,6 +275,7 @@ pub fn reflect_bounds(store: &mut NativeStore, width: f32, height: f32) {
 
 use std::simd::f32x8;
 use std::simd::prelude::SimdFloat;
+use std::simd::StdFloat;
 
 /// Umbral de suavizado al cuadrado (evita división flotante en el hot path).
 const SOFTENING_SQ: f32 = 64.0f32; // 8.0^2
@@ -336,23 +337,23 @@ pub fn compute_forces_brute_range(
             let mut j = 0usize;
             // Unrolling 2x: procesa 16 cuerpos por iteración externa.
             while j + 15 < count {
-                // Bloque 0: j..j+8
-                let mx0 = f32x8::from_slice(std::slice::from_raw_parts(mass.add(j), 8));
-                let dx0 = f32x8::from_slice(std::slice::from_raw_parts(x.add(j), 8)) - f32x8::splat(xi);
-                let dy0 = f32x8::from_slice(std::slice::from_raw_parts(y.add(j), 8)) - f32x8::splat(yi);
+                // Bloque 0: j..j+8 (carga directa desde puntero crudo, sin slice temporal)
+                let mx0 = f32x8::from_array(std::ptr::read_unaligned(mass.add(j).cast::<[f32; 8]>()) );
+                let dx0 = f32x8::from_array(std::ptr::read_unaligned(x.add(j).cast::<[f32; 8]>()) ) - f32x8::splat(xi);
+                let dy0 = f32x8::from_array(std::ptr::read_unaligned(y.add(j).cast::<[f32; 8]>()) ) - f32x8::splat(yi);
                 let r2_0 = dx0 * dx0 + dy0 * dy0 + soft8;
-                let invr_0 = f32x8::splat(1.0f32) / r2_0; // Newton-Raphson disponible vía intrinsic
+                let invr_0 = r2_0.recip().sqrt(); // 1/sqrt(d^2 + soft^2)
                 let invr3_0 = invr_0 * invr_0 * invr_0;
                 let f0 = g8 * mx0 * invr3_0;
                 accx += (f0 * dx0).reduce_sum();
                 accy += (f0 * dy0).reduce_sum();
 
-                // Bloque 1: j+8..j+16
-                let mx1 = f32x8::from_slice(std::slice::from_raw_parts(mass.add(j + 8), 8));
-                let dx1 = f32x8::from_slice(std::slice::from_raw_parts(x.add(j + 8), 8)) - f32x8::splat(xi);
-                let dy1 = f32x8::from_slice(std::slice::from_raw_parts(y.add(j + 8), 8)) - f32x8::splat(yi);
+                // Bloque 1: j+8..j+16 (carga directa desde puntero crudo, sin slice temporal)
+                let mx1 = f32x8::from_array(std::ptr::read_unaligned(mass.add(j + 8).cast::<[f32; 8]>()) );
+                let dx1 = f32x8::from_array(std::ptr::read_unaligned(x.add(j + 8).cast::<[f32; 8]>()) ) - f32x8::splat(xi);
+                let dy1 = f32x8::from_array(std::ptr::read_unaligned(y.add(j + 8).cast::<[f32; 8]>()) ) - f32x8::splat(yi);
                 let r2_1 = dx1 * dx1 + dy1 * dy1 + soft8;
-                let invr_1 = f32x8::splat(1.0f32) / r2_1;
+                let invr_1 = r2_1.recip().sqrt(); // 1/sqrt(d^2 + soft^2)
                 let invr3_1 = invr_1 * invr_1 * invr_1;
                 let f1 = g8 * mx1 * invr3_1;
                 accx += (f1 * dx1).reduce_sum();
