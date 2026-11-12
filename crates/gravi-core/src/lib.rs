@@ -25,5 +25,6 @@ pub mod spatial_grid;
 pub mod collisions;
 pub mod diagnostics;
 pub mod verifier;
+pub mod heap_verifier;
 pub mod scenario;
 pub mod parallel_dispatcher;
