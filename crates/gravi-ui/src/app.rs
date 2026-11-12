@@ -127,6 +127,7 @@ impl App {
             height: 980.0,
         };
         let mut store = allocate(sim_config)?;
+        store.init_lifecycle();
         seed_linear(&mut store, 1920.0, 980.0, 40.0);
 
         let render_buffer = RenderBuffer::new(1920, 980);
@@ -273,6 +274,7 @@ impl App {
             3 => 15.0,
             _ => 60.0,
         };
+        self.store.init_lifecycle();
         seed_linear(&mut self.store, 1920.0, 980.0, speed);
     }
 
