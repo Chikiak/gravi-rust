@@ -3,7 +3,7 @@
 //! Soporta flags de CLI (parseo manual de std::env::args, sin crates):
 //!   --verify-physics  verificación headless (VerifierPreset::F2), imprime
 //!                     energía/momento/CoM y sale sin abrir ventana
-//!   --body-count=N    número de cuerpos iniciales (default 2000)
+//!   --body-count=N    número de cuerpos iniciales (default 5000, paridad C#)
 //!   --engine=parallel|sequential   dispatcher (default parallel)
 //!   --force=brute|barnes           motor de fuerza (default barnes)
 //! Acepta `--flag value` y `--flag=value`. Flags desconocidos: aviso por
@@ -90,7 +90,7 @@ fn main() {
 fn parse_args(args: &[String]) -> Result<CliConfig, String> {
     let mut cli = CliConfig {
         verify_physics: false,
-        body_count: 2000,
+        body_count: 5000,
         engine: Engine::Parallel,
         force: ForceEngine::BarnesHut,
         target_fps: 60,
