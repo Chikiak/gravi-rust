@@ -6,15 +6,16 @@
 #![deny(warnings)]
 
 use gravi_core::collisions::{CollisionConfig, resolve_collisions};
+use gravi_core::constants::PhysicsConstants;
 use gravi_core::diagnostics::calculate_flops_per_frame;
 use gravi_core::parallel_dispatcher::ParallelForceDispatcher;
 use gravi_core::scenario::{load_scenario, save_scenario};
 use gravi_core::simulation_store::{
-    allocate, clear_forces, compute_forces_brute_range, integrate_symplectic_euler, seed_linear,
-    SimConfig,
+    allocate, clear_forces, compute_forces_brute_range, integrate_symplectic_euler,
+    seed_random_cloud, seed_uniform_field, seed_orbital_disk, SimConfig,
 };
 use gravi_core::spatial_grid::SpatialGrid;
-use gravi_core::static_attractor::StaticAttractor;
+use gravi_core::static_attractor::{apply_attractor_forces, StaticAttractor};
 use gravi_core::store::NativeStore;
 use gravi_core::quadtree::{
     build_quadtree, compute_forces_barnes_hut_range, compute_quadtree_masses, root_from_live_bodies,
@@ -24,6 +25,7 @@ use crate::physics_hud::{write_line1, write_line2};
 use crate::render_buffer::RenderBuffer;
 use raylib::consts::KeyboardKey;
 use raylib::prelude::*;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Escenario por defecto (fichero .grav para save/load).
 const SCENARIO_PATH: &str = "scenario.grav";
@@ -34,30 +36,6 @@ const SCENARIO_KEYS: [KeyboardKey; 4] = [
     KeyboardKey::KEY_TWO,
     KeyboardKey::KEY_THREE,
     KeyboardKey::KEY_FOUR,
-];
-
-/// Atrayentes estáticos (4 max según formato .grav).
-const ATTRACTORS: [StaticAttractor; 4] = [
-    StaticAttractor {
-        x: 960.0,
-        y: 490.0,
-        mass: 400.0,
-    },
-    StaticAttractor {
-        x: 300.0,
-        y: 300.0,
-        mass: 200.0,
-    },
-    StaticAttractor {
-        x: 1620.0,
-        y: 680.0,
-        mass: 300.0,
-    },
-    StaticAttractor {
-        x: 600.0,
-        y: 800.0,
-        mass: 150.0,
-    },
 ];
 
 /// Modo de motor de fuerza.
@@ -104,6 +82,9 @@ pub struct App {
     collisions_enabled: bool,
     paused: bool,
     io: IoFlags,
+    scenario: usize,
+    active_g: f32,
+    interactive: Option<StaticAttractor>,
     hud_line1: [u8; 128],
     hud_line2: [u8; 128],
     frame_count: u64,
@@ -128,7 +109,19 @@ impl App {
         };
         let mut store = allocate(sim_config)?;
         store.init_lifecycle();
-        seed_linear(&mut store, 1920.0, 980.0, 40.0);
+
+        let physics_step = gravi_core::physics_step::PhysicsStep::create(1.0 / 60.0);
+
+        seed_orbital_disk(
+            &mut store,
+            1920.0,
+            980.0,
+            50.0,
+            300.0,
+            10000.0,
+            physics_step.softening,
+            1337,
+        );
 
         let render_buffer = RenderBuffer::new(1920, 980);
 
@@ -145,8 +138,6 @@ impl App {
             .max(1);
         let dispatcher = ParallelForceDispatcher::new(n_threads);
 
-        let physics_step = gravi_core::physics_step::PhysicsStep::create(1.0 / 60.0);
-
         Ok(Self {
             rl,
             thread,
@@ -155,7 +146,10 @@ impl App {
             quad_arena,
             grid,
             dispatcher,
-            attractors: ATTRACTORS.to_vec(),
+            attractors: Vec::new(),
+            scenario: 2,
+            active_g: PhysicsConstants::default().g,
+            interactive: None,
             physics_step,
             force_engine: config.force_engine,
             sequential: config.sequential,
@@ -205,6 +199,20 @@ impl App {
         if let Some(s) = scenario {
             self.load_scenario_seeded(s);
         }
+
+        // Atractor interactivo con el ratón (escenarios 1 y 2).
+        let interactive: Option<StaticAttractor> = {
+            let rl = &mut self.rl;
+            if rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT)
+                && (self.scenario == 1 || self.scenario == 2)
+            {
+                let m = rl.get_mouse_position();
+                Some(StaticAttractor::new(m.x, m.y, 80000.0))
+            } else {
+                None
+            }
+        };
+        self.interactive = interactive;
 
         // M = SIMD toggle, E = engine toggle, C = colisiones, B = bounce.
         // Lectura en bloque; la aplicación de cada toggle ocurre después.
@@ -268,14 +276,68 @@ impl App {
 
     /// Carga un escenario predefinido (1..=4) semeando el store.
     fn load_scenario_seeded(&mut self, scenario: usize) {
-        let speed = match scenario {
-            1 => 40.0,
-            2 => 80.0,
-            3 => 15.0,
-            _ => 60.0,
+        let rseed: u32 = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0)
+            % 31_333_333;
+        self.scenario = scenario;
+        self.active_g = if scenario == 4 {
+            3000.0
+        } else {
+            PhysicsConstants::default().g
         };
+        self.interactive = None;
         self.store.init_lifecycle();
-        seed_linear(&mut self.store, 1920.0, 980.0, speed);
+        self.attractors.clear();
+
+        let softening = self.physics_step.softening;
+        match scenario {
+            1 => {
+                let spread = (rseed % 380) as f32 + 30.0;
+                let thermal = (rseed % 20) as f32 + 1.0;
+                seed_random_cloud(&mut self.store, 1920.0, 980.0, spread, thermal, rseed);
+            }
+            2 => {
+                let inner = (rseed % 30) as f32 + 1.0;
+                let outer = (inner * 2.0).max((rseed % 100) as f32 + 5.0);
+                let central = (rseed % 3000) as f32 + 300.0;
+                seed_orbital_disk(
+                    &mut self.store,
+                    1920.0,
+                    980.0,
+                    inner,
+                    outer,
+                    central,
+                    softening,
+                    rseed,
+                );
+            }
+            3 => {
+                let inner = (rseed % 15) as f32 + 1.0;
+                let outer = (inner * 2.0).max((rseed % 500) as f32 + 20.0);
+                let central = 25000.0 + (rseed % 10000) as f32;
+                seed_orbital_disk(
+                    &mut self.store,
+                    1920.0,
+                    980.0,
+                    inner,
+                    outer,
+                    central,
+                    softening,
+                    rseed,
+                );
+                self.attractors.push(StaticAttractor {
+                    x: 960.0,
+                    y: 490.0,
+                    mass: 50000.0,
+                });
+            }
+            _ => {
+                let max_speed = (rseed % 120) as f32 + 40.0;
+                seed_uniform_field(&mut self.store, 1920.0, 980.0, max_speed, rseed);
+            }
+        }
     }
 
     /// Aplica rebote (bounce): invierte Vy de todos los cuerpos.
@@ -293,7 +355,7 @@ impl App {
 
     /// Paso de física: clear_forces → fuerzas (brute o Barnes-Hut) → integrar → colisiones.
     fn update_physics(&mut self) {
-        let g = self.physics_step.g;
+        let g = self.active_g;
         let dt = self.physics_step.dt;
         let damping = self.physics_step.damping;
         let softening = self.physics_step.softening;
@@ -332,10 +394,15 @@ impl App {
                         self.store.live_count,
                         g,
                         softening,
-                        0.5,
+                        PhysicsConstants::default().barnes_hut_theta,
                     );
                 }
             }
+        }
+
+        apply_attractor_forces(&mut self.store, &self.attractors, g, softening);
+        if let Some(a) = self.interactive {
+            apply_attractor_forces(&mut self.store, &[a], g, softening);
         }
 
         integrate_symplectic_euler(&mut self.store, dt, damping);
@@ -360,6 +427,9 @@ impl App {
 
         self.render_buffer.draw_all(&self.store);
         self.render_buffer.draw_attractors(&self.attractors);
+        if let Some(a) = self.interactive {
+            self.render_buffer.draw_attractors(&[a]);
+        }
 
         // Sube textura antes de begin_drawing (ambos necesitan &mut self.rl).
         let _ = self.render_buffer.update_texture(&mut self.rl, &self.thread);
