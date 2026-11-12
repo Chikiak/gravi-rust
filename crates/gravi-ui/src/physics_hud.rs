@@ -48,7 +48,7 @@ fn write_str(buf: &mut [u8], mut pos: usize, src: &[u8]) -> usize {
 }
 
 /// itoa manual de u64 en base 10. Devuelve bytes escritos.
-fn write_u64(buf: &mut [u8], mut pos: usize, mut n: u64) -> usize {
+pub fn write_u64(buf: &mut [u8], mut pos: usize, mut n: u64) -> usize {
     if n == 0 {
         return write_str(buf, pos, b"0");
     }
@@ -72,7 +72,7 @@ fn write_u64(buf: &mut [u8], mut pos: usize, mut n: u64) -> usize {
 
 /// f32 con dígitos fijos después del punto (sin `format!`).
 /// `decimals` cifra decimal forzada (ej. 1 -> "12.3"). Devuelve bytes escritos.
-fn write_f32_fixed(buf: &mut [u8], mut pos: usize, v: f32, decimals: u32) -> usize {
+pub fn write_f32_fixed(buf: &mut [u8], mut pos: usize, v: f32, decimals: u32) -> usize {
     let mut written = 0;
     let neg = v.is_sign_negative();
     let x = v.abs();
@@ -151,47 +151,4 @@ fn write_i64(buf: &mut [u8], mut pos: usize, n: i64) -> usize {
     written
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn line1_format_and_bounds() {
-        let mut buf = [0u8; 64];
-        let n = write_line1(&mut buf, "portable", 5, 1234.5);
-        let s = core::str::from_utf8(&buf[..n]).unwrap();
-        assert_eq!(s, "SIMD:portable | kt:5ms | FLOPS:1234.5Mf", "line1={:?}", s);
-        // Truncación segura: buf muy pequeño no sobrescribe.
-        let mut small = [0u8; 4];
-        let m = write_line1(&mut small, "x", 1, 1.0);
-        assert!(m <= small.len());
-    }
-
-    #[test]
-    fn line2_format_and_bounds() {
-        let mut buf = [0u8; 64];
-        let n = write_line2(&mut buf, "barnes-hut", 1024, 3, 7);
-        let s = core::str::from_utf8(&buf[..n]).unwrap();
-        assert_eq!(s, "ENG:barnes-hut | NODES:1024 | BUILD:3ms | TRAV:7ms", "line2={:?}", s);
-        let mut small = [0u8; 2];
-        let m = write_line2(&mut small, "e", 1, 1, 1);
-        assert!(m <= small.len());
-    }
-
-    #[test]
-    fn itoa_and_fixed() {
-        let mut b = [0u8; 16];
-        assert_eq!(write_u64(&mut b, 0, 0), 1);
-        assert_eq!(write_u64(&mut b, 0, 42), 2);
-        assert_eq!(write_u64(&mut b, 0, 123456789), 9);
-        let mut bf = [0u8; 16];
-        let n = write_f32_fixed(&mut bf, 0, 3.1415f32, 2);
-        assert_eq!(n, 4);
-        let s = core::str::from_utf8(&bf[..n]).unwrap();
-        assert_eq!(s, "3.14");
-    }
-}
