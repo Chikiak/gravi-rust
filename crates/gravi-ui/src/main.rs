@@ -19,6 +19,7 @@ struct CliConfig {
     body_count: usize,
     engine: Engine,
     force: ForceEngine,
+    target_fps: u32,
 }
 
 /// Motor de dispatcher solicitado por CLI.
@@ -70,6 +71,7 @@ fn main() {
         body_count: cli.body_count,
         force_engine: cli.force,
         sequential: matches!(cli.engine, Engine::Sequential),
+        target_fps: cli.target_fps,
     };
 
     let app = match App::new(config) {
@@ -91,6 +93,7 @@ fn parse_args(args: &[String]) -> Result<CliConfig, String> {
         body_count: 2000,
         engine: Engine::Parallel,
         force: ForceEngine::BarnesHut,
+        target_fps: 60,
     };
 
     let mut i = 1;
@@ -140,6 +143,10 @@ fn parse_args(args: &[String]) -> Result<CliConfig, String> {
                     "barnes" => ForceEngine::BarnesHut,
                     _ => return Err(format!("valor de --force no válido: '{}'", v)),
                 };
+            }
+            "target-fps" => {
+                let v = take_value(&mut i, "--target-fps")?;
+                cli.target_fps = v.parse::<u32>().map_err(|_| format!("valor de --target-fps no es un entero válido: '{}'", v))?;
             }
             _unknown => {
                 eprintln!("gravi-ui: aviso: bandera desconocida ignorada: {}", arg);

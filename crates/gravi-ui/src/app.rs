@@ -83,6 +83,8 @@ pub struct AppConfig {
     pub force_engine: ForceEngine,
     /// Usar ruta secuencial en lugar del dispatcher paralelo.
     pub sequential: bool,
+    /// FPS objetivo de la ventana (default 60).
+    pub target_fps: u32,
 }
 
 /// Estado de la aplicación.
@@ -117,7 +119,7 @@ impl App {
             .title("GraviSharp — N-body 2D (gravi-ui)")
             .build();
 
-        rl.set_target_fps(60);
+        rl.set_target_fps(config.target_fps);
 
         let sim_config = SimConfig {
             body_count: config.body_count,
@@ -389,12 +391,9 @@ impl App {
         let mut d = self.rl.begin_drawing(&self.thread);
         d.clear_background(Color::BLACK);
 
-        // La textura se mueve para dibujar y se vuelve a guardar: se conserva
-        // la caché entre frames sin clonar el handle de textura.
-        // `Texture2D` no es `Copy`: `draw_texture` se queda con el handle y
-        // lo descarga al retorno, por tanto se saca de la caché y se vuelve a
-        // crear perezosamente en el siguiente `update_texture`.
-        if let Some(tex) = self.render_buffer.texture.take() {
+        // draw_texture toma &Texture2D: se dibuja sin vaciar la caché, así la
+        // textura se conserva entre frames sin clonar el handle.
+        if let Some(tex) = &self.render_buffer.texture {
             d.draw_texture(tex, 0, 0, Color::WHITE);
         }
 
