@@ -28,9 +28,6 @@ use raylib::prelude::*;
 /// Escenario por defecto (fichero .grav para save/load).
 const SCENARIO_PATH: &str = "scenario.grav";
 
-/// Número de cuerpos por defecto.
-const DEFAULT_BODY_COUNT: usize = 4000;
-
 /// Teclas de escenario 1..=4.
 const SCENARIO_KEYS: [KeyboardKey; 4] = [
     KeyboardKey::KEY_ONE,
@@ -65,7 +62,7 @@ const ATTRACTORS: [StaticAttractor; 4] = [
 
 /// Modo de motor de fuerza.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ForceEngine {
+pub enum ForceEngine {
     BruteForce,
     BarnesHut,
 }
@@ -74,6 +71,18 @@ enum ForceEngine {
 struct IoFlags {
     save_pending: bool,
     load_pending: bool,
+}
+
+/// Configuración de la App proveniente de los argumentos de la línea de
+/// comandos (ver `main.rs`).
+#[derive(Debug, Clone, Copy)]
+pub struct AppConfig {
+    /// Número de cuerpos iniciales (default 2000).
+    pub body_count: usize,
+    /// Motor de fuerza (default Barnes-Hut).
+    pub force_engine: ForceEngine,
+    /// Usar ruta secuencial en lugar del dispatcher paralelo.
+    pub sequential: bool,
 }
 
 /// Estado de la aplicación.
@@ -88,6 +97,7 @@ pub struct App {
     attractors: Vec<StaticAttractor>,
     physics_step: gravi_core::physics_step::PhysicsStep,
     force_engine: ForceEngine,
+    sequential: bool,
     manual_simd: bool,
     collisions_enabled: bool,
     paused: bool,
@@ -100,8 +110,8 @@ pub struct App {
 
 impl App {
     /// Crea la ventana 1920×980 a 60 FPS, asigna store, quadtree, grid,
-    /// dispatcher y RenderBuffer. Abre y cierra sin panic.
-    pub fn new() -> Result<Self, String> {
+    /// dispatcher y RenderBuffer según `config`. Abre y cierra sin panic.
+    pub fn new(config: AppConfig) -> Result<Self, String> {
         let (mut rl, thread) = raylib::init()
             .size(1920, 980)
             .title("GraviSharp — N-body 2D (gravi-ui)")
@@ -109,20 +119,20 @@ impl App {
 
         rl.set_target_fps(60);
 
-        let config = SimConfig {
-            body_count: DEFAULT_BODY_COUNT,
+        let sim_config = SimConfig {
+            body_count: config.body_count,
             width: 1920.0,
             height: 980.0,
         };
-        let mut store = allocate(config)?;
+        let mut store = allocate(sim_config)?;
         seed_linear(&mut store, 1920.0, 980.0, 40.0);
 
         let render_buffer = RenderBuffer::new(1920, 980);
 
-        let quad_arena = QuadtreeArena::allocate(DEFAULT_BODY_COUNT)
+        let quad_arena = QuadtreeArena::allocate(config.body_count)
             .map_err(|e| format!("quadtree arena: {:?}", e))?;
 
-        let mut grid = SpatialGrid::allocate(30, 16, DEFAULT_BODY_COUNT as i32)
+        let mut grid = SpatialGrid::allocate(30, 16, config.body_count as i32)
             .map_err(|e| format!("spatial grid: {:?}", e))?;
         grid.set_cell_size(64.0);
 
@@ -144,7 +154,8 @@ impl App {
             dispatcher,
             attractors: ATTRACTORS.to_vec(),
             physics_step,
-            force_engine: ForceEngine::BruteForce,
+            force_engine: config.force_engine,
+            sequential: config.sequential,
             manual_simd: true,
             collisions_enabled: false,
             paused: false,
@@ -287,7 +298,8 @@ impl App {
 
         match self.force_engine {
             ForceEngine::BruteForce => {
-                if self.store.live_count == self.store.count {
+                let parallel = !self.sequential && self.store.live_count == self.store.count;
+                if parallel {
                     self.dispatcher.compute_forces_parallel_range(
                         &self.store,
                         0,
