@@ -3,6 +3,7 @@
 //! (Issue 5: Kerneles de fuerza vectorizados.)
 //! (Issue 3: SimulationStore — allocate/dispose/seed.)
 
+use crate::constants::PhysicsConstants;
 use crate::store::NativeStore;
 
 /// Configuración de creación de un store de simulación.
@@ -56,36 +57,190 @@ pub fn dispose(store: &mut NativeStore) {
     store.free_head = -1;
 }
 
-/// Siembra los cuerpos en una rejilla linear: X/Y distribuidas uniformemente
-/// en [0, width] / [0, height], y Vx/Vy con magnitud constante `speed`.
-pub fn seed_linear(store: &mut NativeStore, width: f32, height: f32, speed: f32) {
+/// RNG determinista module-private (SplitMix64), sin dependencias externas.
+struct SplitMix64(u64);
+
+impl SplitMix64 {
+    fn new(seed: u32) -> Self {
+        Self((seed as u64).wrapping_add(0x9E37_79B9_7F4A_7C15))
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    /// `f32` en [0, 1) a partir de los 24 bits altos de la palabra de 64 bits.
+    fn next_f32(&mut self) -> f32 {
+        (self.next_u64() >> 40) as f32 / ((1u32 << 24) as f32)
+    }
+}
+
+const TAU: f32 = 2.0 * std::f32::consts::PI;
+
+/// Siembra los cuerpos con X/Y uniformes en [0, width) x [0, height) vía RNG,
+/// ángulo = next_f32()*2π y velocidad de magnitud constante `speed`.
+/// Mass=1.0, Radius=0.5; tail (live_count=count, free_head=-1, generaciones=0);
+/// finaliza con `clear_forces(store)`.
+pub fn seed_linear(store: &mut NativeStore, width: f32, height: f32, speed: f32, seed: u32) {
+    let mut rng = SplitMix64::new(seed);
     let count = store.count;
     let x = store.x_slice();
     let y = store.y_slice();
     let vx = store.vx_slice();
     let vy = store.vy_slice();
-
-    let mut cols = (count as f32).sqrt().ceil() as usize;
-    if cols == 0 {
-        cols = 1;
-    }
-    let max_dim = if cols > 1 { cols - 1 } else { 1 };
+    let mass = store.mass_slice();
+    let radius = store.radius_slice();
 
     for i in 0..count {
-        let cx = (i % cols) as f32;
-        let cy = (i / cols) as f32;
-        x[i] = (cx / max_dim as f32) * width;
-        y[i] = (cy / max_dim as f32) * height;
-
-        let angle = (i as f32) * 0.7853981633974483; // pi/4
+        x[i] = rng.next_f32() * width;
+        y[i] = rng.next_f32() * height;
+        let angle = rng.next_f32() * TAU;
         vx[i] = angle.cos() * speed;
         vy[i] = angle.sin() * speed;
+        mass[i] = 1.0;
+        radius[i] = 0.5;
     }
     store.live_count = count;
     store.free_head = -1;
     for g in store.generation_slice().iter_mut() {
         *g = 0;
     }
+    clear_forces(store);
+}
+
+/// Siembra una nube aleatoria centrada (aproximación CLT, m=1) con velocidades
+/// térmicas. X/Y clampeadas a [0, width-1] / [0, height-1]. Zero-alloc.
+pub fn seed_random_cloud(
+    store: &mut NativeStore,
+    width: f32,
+    height: f32,
+    spread: f32,
+    thermal_speed: f32,
+    seed: u32,
+) {
+    let mut rng = SplitMix64::new(seed);
+    let count = store.count;
+    let cx = width * 0.5;
+    let cy = height * 0.5;
+    let x_max = width - 1.0;
+    let y_max = height - 1.0;
+    let x = store.x_slice();
+    let y = store.y_slice();
+    let vx = store.vx_slice();
+    let vy = store.vy_slice();
+    let mass = store.mass_slice();
+    let radius = store.radius_slice();
+
+    for i in 0..count {
+        let normal = rng.next_f32() + rng.next_f32() + rng.next_f32() - 1.5;
+        let r = normal * spread;
+        let theta = rng.next_f32() * TAU;
+        let mut xi = cx + r * theta.cos();
+        if xi < 0.0 {
+            xi = 0.0;
+        } else if xi >= width {
+            xi = x_max;
+        }
+        let mut yi = cy + r * theta.sin();
+        if yi < 0.0 {
+            yi = 0.0;
+        } else if yi >= height {
+            yi = y_max;
+        }
+        x[i] = xi;
+        y[i] = yi;
+        vx[i] = thermal_speed * (rng.next_f32() - 0.5);
+        vy[i] = thermal_speed * (rng.next_f32() - 0.5);
+        mass[i] = 1.0;
+        radius[i] = 0.5;
+    }
+    store.live_count = count;
+    store.free_head = -1;
+    for g in store.generation_slice().iter_mut() {
+        *g = 0;
+    }
+    clear_forces(store);
+}
+
+/// Siembra un campo uniforme aleatorio sobre toda la pantalla con velocidades
+/// isótropas: módulo sqrt(u)*max_speed y dirección uniforme en [0, 2π). Zero-alloc.
+pub fn seed_uniform_field(store: &mut NativeStore, width: f32, height: f32, max_speed: f32, seed: u32) {
+    let mut rng = SplitMix64::new(seed);
+    let count = store.count;
+    let x = store.x_slice();
+    let y = store.y_slice();
+    let vx = store.vx_slice();
+    let vy = store.vy_slice();
+    let mass = store.mass_slice();
+    let radius = store.radius_slice();
+
+    for i in 0..count {
+        x[i] = rng.next_f32() * width;
+        y[i] = rng.next_f32() * height;
+        let u = rng.next_f32();
+        let speed_mag = u.sqrt() * max_speed;
+        let angle = rng.next_f32() * TAU;
+        vx[i] = speed_mag * angle.cos();
+        vy[i] = speed_mag * angle.sin();
+        mass[i] = 1.0;
+        radius[i] = 0.5;
+    }
+    store.live_count = count;
+    store.free_head = -1;
+    for g in store.generation_slice().iter_mut() {
+        *g = 0;
+    }
+    clear_forces(store);
+}
+
+/// Siembra un disco orbital con velocidad tangencial kepleriana alrededor de
+/// una masa central. `inner_radius` se clampa a >= 1.0. Zero-alloc.
+pub fn seed_orbital_disk(
+    store: &mut NativeStore,
+    width: f32,
+    height: f32,
+    inner_radius: f32,
+    outer_radius: f32,
+    central_mass: f32,
+    softening: f32,
+    seed: u32,
+) {
+    let mut rng = SplitMix64::new(seed);
+    let count = store.count;
+    let cx = width * 0.5;
+    let cy = height * 0.5;
+    let g = PhysicsConstants::default().g;
+    let inner = inner_radius.max(1.0);
+    let soft_sq = softening * softening;
+    let x = store.x_slice();
+    let y = store.y_slice();
+    let vx = store.vx_slice();
+    let vy = store.vy_slice();
+    let mass = store.mass_slice();
+    let radius = store.radius_slice();
+
+    for i in 0..count {
+        let r = inner + rng.next_f32() * (outer_radius - inner);
+        let theta = rng.next_f32() * TAU;
+        x[i] = cx + r * theta.cos();
+        y[i] = cy + r * theta.sin();
+        let r_sq_soft = r * r + soft_sq;
+        let v = r * (g * central_mass / (r_sq_soft * r_sq_soft.sqrt())).sqrt();
+        vx[i] = -v * theta.sin();
+        vy[i] = v * theta.cos();
+        mass[i] = 1.0;
+        radius[i] = 0.5;
+    }
+    store.live_count = count;
+    store.free_head = -1;
+    for g in store.generation_slice().iter_mut() {
+        *g = 0;
+    }
+    clear_forces(store);
 }
 
 /// Clampa X/Y a los límites [0, width] / [0, height] e invierte la velocidad

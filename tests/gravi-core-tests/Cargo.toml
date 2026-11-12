@@ -53,3 +53,7 @@ path = "src/diagnostics.rs"
 [[test]]
 name = "heap"
 path = "src/heap.rs"
+
+[[test]]
+name = "seeders"
+path = "src/seeders.rs"

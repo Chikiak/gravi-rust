@@ -108,7 +108,7 @@ fn full_pipeline_brute_and_barnes_hut_and_integrate() {
     })
     .unwrap();
     store.init_lifecycle();
-    seed_linear(&mut store, 100.0, 100.0, 10.0);
+    seed_linear(&mut store, 100.0, 100.0, 10.0, 1337);
 
     // clear_forces + brute + integrate: debe completarse sin panic.
     let mut t = 0u64;
@@ -180,7 +180,7 @@ fn zero_allocations_hot_path_heap_verifier() {
     })
     .unwrap();
     store.init_lifecycle();
-    seed_linear(&mut store, 100.0, 100.0, 10.0);
+    seed_linear(&mut store, 100.0, 100.0, 10.0, 1337);
 
     let mut hv = HeapVerifier::new();
     let mut t = 0u64;
@@ -314,7 +314,7 @@ fn scenario_round_trip_save_load() {
     })
     .unwrap();
     store.init_lifecycle();
-    seed_linear(&mut store, 100.0, 100.0, 10.0);
+    seed_linear(&mut store, 100.0, 100.0, 10.0, 1337);
 
     let path = Path::new("gravi_core_tests_roundtrip.grav");
     assert!(save_scenario(path, &store, 2).is_ok());

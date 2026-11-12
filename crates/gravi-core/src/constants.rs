@@ -10,6 +10,8 @@ pub struct PhysicsConstants {
     pub softening: f32,
     /// Amortiguamiento (damping) aplicado en la integración.
     pub damping: f32,
+    /// Umbral de apertura (theta) de Barnes-Hut.
+    pub barnes_hut_theta: f32,
 }
 
 impl Default for PhysicsConstants {
@@ -18,6 +20,7 @@ impl Default for PhysicsConstants {
             g: 1500.0,
             softening: 8.0,
             damping: 1.0,
+            barnes_hut_theta: 0.3,
         }
     }
 }

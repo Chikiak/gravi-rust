@@ -13,7 +13,7 @@ fn config() -> SimConfig {
 fn ac1_round_trip_save_load_recovers_xyvxvy() {
     let mut store = allocate(config()).unwrap();
     let speed = 10.0f32;
-    seed_linear(&mut store, 100.0, 100.0, speed);
+    seed_linear(&mut store, 100.0, 100.0, speed, 1337);
 
     let path = std::env::temp_dir().join("gravi_scenario_roundtrip.grav");
     let _ = save_scenario(&path, &store, 2);

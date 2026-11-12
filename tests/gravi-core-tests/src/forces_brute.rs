@@ -52,7 +52,7 @@ fn ac3_dispose_is_idempotent_and_nulls() {
 fn ac4_seed_linear_fills_xy_in_range_and_speed_magnitude() {
     let mut store = allocate(config()).unwrap();
     let speed = 10.0f32;
-    seed_linear(&mut store, 100.0, 100.0, speed);
+    seed_linear(&mut store, 100.0, 100.0, speed, 1337);
 
     let x = store.x_slice();
     let y = store.y_slice();
