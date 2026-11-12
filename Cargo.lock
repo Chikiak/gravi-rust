@@ -133,6 +133,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "gravi-core-tests"
+version = "0.1.0"
+dependencies = [
+ "gravi-core",
+]
+
+[[package]]
 name = "gravi-ui"
 version = "0.1.0"
 dependencies = [
