@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/gravi-core",
     "crates/gravi-ui",
+    "tests/gravi-core-tests",
 ]
 exclude = []
 

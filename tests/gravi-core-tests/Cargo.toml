@@ -1,0 +1,11 @@
+[package]
+name = "gravi-core-tests"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gravi-core = { path = "../../crates/gravi-core" }
+
+[[test]]
+name = "integration"
+path = "src/integration.rs"
