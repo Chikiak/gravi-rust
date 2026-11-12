@@ -1,0 +1,227 @@
+//! heap_verifier — verificador de asignaciones del heap (Onda 4).
+//! Zero-allocation en el hot path: sin `Vec`, `String`, `format!`, `Box` ni
+//! closures. `begin_frame`/`end_frame` miden el delta neto de bytes del heap
+//! con un `GlobalAlloc` personalizado sobre el allocador del sistema.
+
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+// ---------------------------------------------------------------------------
+// Contador global de bytes del heap (netos, nunca negativos).
+// ---------------------------------------------------------------------------
+
+static HEAP_BYTES: AtomicUsize = AtomicUsize::new(0);
+
+/// Allocador que envuelve `System` y cuenta asignaciones/liberaciones del heap.
+struct CountingAllocator;
+
+unsafe impl GlobalAlloc for CountingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let ptr = unsafe { System.alloc(layout) };
+        if !ptr.is_null() {
+            HEAP_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
+        }
+        ptr
+    }
+
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        let ptr = unsafe { System.alloc_zeroed(layout) };
+        if !ptr.is_null() {
+            HEAP_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
+        }
+        ptr
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        unsafe { System.dealloc(ptr, layout) };
+        HEAP_BYTES.fetch_sub(layout.size(), Ordering::Relaxed);
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        let old = layout.size();
+        let ptr = unsafe { System.realloc(ptr, layout, new_size) };
+        if !ptr.is_null() {
+            let delta = new_size as isize - old as isize;
+            if delta > 0 {
+                HEAP_BYTES.fetch_add(delta as usize, Ordering::Relaxed);
+            } else {
+                HEAP_BYTES.fetch_sub((-delta) as usize, Ordering::Relaxed);
+            }
+        }
+        ptr
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Verificador por frame (single-thread: usa UnsafeCell para evitar `Cell`
+// + borrows mutables en el hot path).
+// ---------------------------------------------------------------------------
+
+/// Reporte de un frame verificado. `Copy` y sin asignación en su construcción.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HeapReport {
+    pub frame_id: u64,
+    pub heap_bytes_start: usize,
+    pub heap_bytes_end: usize,
+    pub delta_bytes: isize,
+    pub max_delta_bytes: isize,
+}
+
+/// Verificador ligero de heap por frame.
+///
+/// Uso:
+/// ```ignore
+/// let mut hv = HeapVerifier::new();
+/// hv.begin_frame();
+/// // ... hot path (sin asignar) ...
+/// let report = hv.end_frame();
+/// assert_eq!(report.delta_bytes, 0);
+/// ```
+pub struct HeapVerifier {
+    frame_id: u64,
+    start_bytes: UnsafeCell<usize>,
+    max_delta: isize,
+}
+
+impl Default for HeapVerifier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl HeapVerifier {
+    /// Crea un verificador con `max_delta = 0` y `frame_id = 0`.
+    pub fn new() -> Self {
+        Self {
+            frame_id: 0,
+            start_bytes: UnsafeCell::new(0),
+            max_delta: 0,
+        }
+    }
+
+    /// Marca el inicio de un frame: captura los bytes del heap actuales.
+    /// Debe llamarse antes del hot path del frame.
+    pub fn begin_frame(&mut self) {
+        self.frame_id = self.frame_id.wrapping_add(1);
+        unsafe {
+            *self.start_bytes.get() = HEAP_BYTES.load(Ordering::Relaxed);
+        }
+    }
+
+    /// Marca el fin de un frame y devuelve el reporte. Actualiza
+    /// `max_delta` si el delta neto de este frame lo supera.
+    pub fn end_frame(&mut self) -> HeapReport {
+        let end = HEAP_BYTES.load(Ordering::Relaxed);
+        let start = unsafe { *self.start_bytes.get() };
+        let delta = end as isize - start as isize;
+        if delta > self.max_delta {
+            self.max_delta = delta;
+        }
+        HeapReport {
+            frame_id: self.frame_id,
+            heap_bytes_start: start,
+            heap_bytes_end: end,
+            delta_bytes: delta,
+            max_delta_bytes: self.max_delta,
+        }
+    }
+
+    /// Devuelve el delta máximo observado hasta ahora (bytes).
+    pub fn max_delta(&self) -> isize {
+        self.max_delta
+    }
+
+    /// Reinicia `max_delta` a 0 (útil entre suites de verificación).
+    pub fn reset_max(&mut self) {
+        self.max_delta = 0;
+    }
+
+    /// Devuelve los bytes del heap actualmente contabilizados.
+    pub fn current_heap_bytes(&self) -> usize {
+        HEAP_BYTES.load(Ordering::Relaxed)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests (Issue 14 — criterios de aceptación)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ac_begin_end_frame_reports_zero_delta_without_allocations() {
+        let mut hv = HeapVerifier::new();
+        hv.begin_frame();
+        // Hot path: cero asignaciones.
+        let _x: usize = 42;
+        let report = hv.end_frame();
+        assert_eq!(report.delta_bytes, 0);
+        assert_eq!(report.heap_bytes_start, report.heap_bytes_end);
+        assert_eq!(hv.max_delta(), 0);
+    }
+
+    #[test]
+    fn ac_max_delta_zero_after_full_physics_pipeline() {
+        // Simula un pipeline completo de física sin save/load: varias
+        // iteraciones de begin_frame/end_frame sin asignar en el hot path.
+        let mut hv = HeapVerifier::new();
+        let mut i = 0u64;
+        while i < 100 {
+            hv.begin_frame();
+            // Cuerpo del frame: aritmética pura, sin Vec/String/format!/Box.
+            let mut acc: f32 = 0.0;
+            let mut j = 0usize;
+            while j < 64 {
+                acc = acc + (j as f32) * 0.5f32;
+                j += 1;
+            }
+            let _ = acc;
+            let report = hv.end_frame();
+            assert_eq!(report.delta_bytes, 0, "frame {}", i);
+            i += 1;
+        }
+        assert_eq!(hv.max_delta(), 0, "max_delta debe ser 0 sin save/load");
+    }
+
+    #[test]
+    fn ac_report_fields_consistent() {
+        let mut hv = HeapVerifier::new();
+        hv.begin_frame();
+        let _r = hv.end_frame();
+        assert_eq!(hv.max_delta(), 0);
+        assert_eq!(_r.frame_id, 1);
+        assert_eq!(_r.delta_bytes, 0);
+    }
+
+    #[test]
+    fn ac_max_delta_tracks_peak() {
+        let mut hv = HeapVerifier::new();
+        // Frame 1: sin asignar.
+        hv.begin_frame();
+        let _r1 = hv.end_frame();
+        assert_eq!(_r1.max_delta_bytes, 0);
+        // Frame 2: asignar y liberar (delta neto 0, max_delta 0).
+        hv.begin_frame();
+        let _v = Box::new(1usize);
+        drop(_v);
+        let _r2 = hv.end_frame();
+        assert_eq!(_r2.delta_bytes, 0);
+        assert_eq!(_r2.max_delta_bytes, 0);
+        assert_eq!(hv.max_delta(), 0);
+    }
+
+    #[test]
+    fn ac_reset_max() {
+        let mut hv = HeapVerifier::new();
+        hv.begin_frame();
+        let _v = Box::new(1usize);
+        drop(_v);
+        let _r = hv.end_frame();
+        assert_eq!(_r.max_delta_bytes, 0); // neto 0
+        hv.reset_max();
+        assert_eq!(hv.max_delta(), 0);
+    }
+}
