@@ -278,7 +278,7 @@ use std::simd::prelude::SimdFloat;
 use std::simd::StdFloat;
 
 /// Umbral de suavizado al cuadrado (evita división flotante en el hot path).
-const SOFTENING_SQ: f32 = 64.0f32; // 8.0^2
+use crate::constants::SOFTENING_SQ;
 
 /// `clear_forces` — pone a cero Fx/Fy de todos los slots vivos.
 #[inline(always)]
