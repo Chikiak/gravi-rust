@@ -25,7 +25,7 @@ use crate::physics_hud::{write_line1, write_line2};
 use crate::render_buffer::RenderBuffer;
 use raylib::consts::KeyboardKey;
 use raylib::prelude::*;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH, Instant};
 
 /// Escenario por defecto (fichero .grav para save/load).
 const SCENARIO_PATH: &str = "scenario.grav";
@@ -89,6 +89,7 @@ pub struct App {
     hud_line2: [u8; 128],
     frame_count: u64,
     kt_ms: u64,
+    accumulator: f32,
 }
 
 impl App {
@@ -164,19 +165,25 @@ impl App {
             hud_line2: [0u8; 128],
             frame_count: 0,
             kt_ms: 0,
+            accumulator: 0.0,
         })
     }
 
     /// Ejecuta el bucle principal hasta que se cierre la ventana.
     pub fn run(mut self) {
+        let mut last_frame = Instant::now();
         while !self.rl.window_should_close() {
             self.process_input();
             self.process_io_pending();
 
             if !self.paused {
-                let t0 = std::time::Instant::now();
-                self.update_physics();
+                let frame_dt = last_frame.elapsed().as_secs_f32();
+                last_frame = Instant::now();
+                let t0 = Instant::now();
+                let _n = self.physics_substeps_for_frame(frame_dt);
                 self.kt_ms = t0.elapsed().as_millis() as u64;
+            } else {
+                last_frame = Instant::now(); // no acumular tiempo pausado
             }
 
             self.render();
@@ -416,6 +423,16 @@ impl App {
         }
     }
 
+    /// Ejecuta subpasos de física fijos (dt) mientras el acumulador lo permita.
+    /// Devuelve el número de subpasos ejecutados en este frame.
+    fn physics_substeps_for_frame(&mut self, frame_dt: f32) -> usize {
+        let n = fixed_timestep_substeps(&mut self.accumulator, self.physics_step.dt, frame_dt);
+        for _ in 0..n {
+            self.update_physics();
+        }
+        n
+    }
+
     /// Render: limpia buffer, dibuja cuerpos y atrayentes, sube textura,
     /// dibuja HUD y frame.
     fn render(&mut self) {
@@ -481,6 +498,20 @@ impl App {
         let sec = if self.kt_ms == 0 { 0.001 } else { self.kt_ms as f32 / 1000.0 };
         flops as f32 / sec / 1_000_000.0
     }
+}
+
+/// Acumula `delta` y ejecuta subpasos fijos de `dt` consumiendo el acumulador.
+/// Devuelve cuántos subpasos se consumieron; el residuo queda en `accumulator`
+/// para el frame siguiente (no se descarta). Pura: sin asignaciones, sin raylib,
+/// sin división flotante en simulación (conteo entero).
+pub fn fixed_timestep_substeps(accumulator: &mut f32, dt: f32, delta: f32) -> usize {
+    *accumulator += delta;
+    let mut n = 0usize;
+    while *accumulator >= dt {
+        *accumulator -= dt;
+        n += 1;
+    }
+    n
 }
 
 impl Drop for App {
