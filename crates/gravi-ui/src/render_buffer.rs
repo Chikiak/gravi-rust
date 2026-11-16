@@ -36,7 +36,7 @@ impl RenderBuffer {
         // menos a 8 bytes en Windows/x86_64: suficiente para indexarlos como
         // `u32` (alineación 4) sin ningún padding.
         unsafe {
-            debug_assert_eq!(image.data() as usize % 4, 0);
+            assert_eq!(image.data() as usize % 4, 0, "Image data must be 4-byte aligned for u32 pixel access");
         }
         Self {
             image,
@@ -113,6 +113,19 @@ impl RenderBuffer {
         }
         let bytes = Self::image_bytes(&self.image);
         self.texture.as_mut().unwrap().update_texture(bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_buffer_pixels_mut_alineado_a_4() {
+        let mut rb = RenderBuffer::new(8, 8);
+        let pixels = rb.pixels_mut();
+        let ptr = pixels.as_ptr() as usize;
+        assert_eq!(ptr % 4, 0, "dirección base de pixels_mut debe ser múltiplo de 4");
     }
 }
 

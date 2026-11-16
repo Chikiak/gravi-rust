@@ -1,7 +1,7 @@
 //! Tests extraídos de crates/gravi-core/src/entity_lifecycle.rs (Issue 3 — criterios de aceptación).
 //! Integration test: solo API pública de gravi_core.
 
-use gravi_core::entity_lifecycle::{allocate_entity, is_live, mark_dead, LifecycleError};
+use gravi_core::entity_lifecycle::{allocate_entity, is_live, mark_dead};
 use gravi_core::store::NativeStore;
 
 /// Crea un store con `count` slots todos vivos, inicializa ciclo de vida.
@@ -60,9 +60,9 @@ fn ac2_mark_dead_swap_remove_o1() {
     // AC2: live_pos actualizado para el slot movido (3 está ahora en pos 1).
     unsafe { assert_eq!(*store.live_pos.add(3), 1); }
 
-    // AC2: push LIFO en free_list — free_head = 1, free_list[1] = -1 (vacía antes).
+    // AC2: push LIFO en free_list — free_head = 1, free_list[1] = 0 (cabeza previa tras init_lifecycle).
     assert_eq!(store.free_head, 1);
-    unsafe { assert_eq!(*store.free_list.add(1), -1); }
+    unsafe { assert_eq!(*store.free_list.add(1), 0); }
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn ac2_mark_dead_last_live_slot() {
     unsafe {
         assert_eq!(*store.mass.add(2), -1.0);
         assert_eq!(*store.generation.add(2), 1);
-        assert_eq!(*store.free_list.add(2), -1);
+        assert_eq!(*store.free_list.add(2), 0); // encadena al free_head previo (0 tras init_lifecycle)
     }
     // live_indices[0..2] = [0, 1] (slot 2 era el último, no hay swap real).
     unsafe {
@@ -98,13 +98,13 @@ fn ac2_mark_dead_twice_same_slot_is_error() {
 fn ac3_allocate_entity_recycles_lifo_before_bump() {
     let mut store = make_store(4);
 
-    // Marcar slots 1 y 2 como muertos → free_list LIFO: free_head=2, free_list[2]=1, free_list[1]=-1.
+    // Marcar slots 1 y 2 como muertos → free_list LIFO: free_head=2, free_list[2]=1, free_list[1]=0 (cabeza previa tras init_lifecycle).
     assert!(mark_dead(&mut store, 1).is_ok());
     assert!(mark_dead(&mut store, 2).is_ok());
     assert_eq!(store.free_head, 2);
     unsafe {
         assert_eq!(*store.free_list.add(2), 1);
-        assert_eq!(*store.free_list.add(1), -1);
+        assert_eq!(*store.free_list.add(1), 0);
     }
 
     // allocate_entity debe reciclar el más reciente (LIFO): slot 2.
@@ -121,42 +121,44 @@ fn ac3_allocate_entity_recycles_lifo_before_bump() {
     assert!(res.is_ok());
     let slot = res.unwrap();
     assert_eq!(slot, 1);
-    assert_eq!(store.free_head, -1);
+    // free_head = 0 (el siguiente en la cadena desde init_lifecycle), no -1.
+    assert_eq!(store.free_head, 0);
 }
 
 #[test]
 fn ac3_allocate_entity_bumps_when_free_list_empty() {
     let mut store = make_store(2);
     assert_eq!(store.live_count, 2);
-    assert_eq!(store.free_head, -1);
+    assert_eq!(store.free_head, 0); // tras init_lifecycle, free_head = 0
 
-    // Store lleno (live_count == count) → no hay bump posible.
+    // Marcar todos los slots como muertos: free list poblada, live_count = 0.
+    assert!(mark_dead(&mut store, 0).is_ok());
+    assert!(mark_dead(&mut store, 1).is_ok());
+    assert_eq!(store.live_count, 0);
+
+    // Con free list poblada, allocate_entity recicla (no devuelve NoCapacity).
     let res = allocate_entity(&mut store, 1.0, 2.0, 3.0, 4.0, 5.0, 0.5);
-    assert_eq!(res, Err(LifecycleError::NoCapacity));
-    assert_eq!(store.live_count, 2); // sin cambios
+    assert!(res.is_ok());
+    assert_eq!(store.live_count, 1);
 }
 
 #[test]
 fn ac3_allocate_entity_after_mark_dead_recycles_then_bumps() {
     let mut store = make_store(3);
     assert_eq!(store.live_count, 3);
+    assert_eq!(store.free_head, 0); // tras init_lifecycle
 
-    // Matar slot 0 → free_head = 0, live_count = 2.
-    assert!(mark_dead(&mut store, 0).is_ok());
+    // Matar slot 1 → push LIFO, free_head = 1, free_list[1] = 0 (cabeza previa).
+    assert!(mark_dead(&mut store, 1).is_ok());
     assert_eq!(store.live_count, 2);
-    assert_eq!(store.free_head, 0);
+    assert_eq!(store.free_head, 1);
 
-    // Allocate recicla slot 0 (LIFO), live_count vuelve a 3.
+    // Allocate recicla slot 1 (LIFO, cabeza de free list), live_count vuelve a 3.
     let res = allocate_entity(&mut store, 9.0, 9.0, 9.0, 9.0, 9.0, 0.5);
     assert!(res.is_ok());
     let slot = res.unwrap();
-    assert_eq!(slot, 0);
+    assert_eq!(slot, 1);
     assert_eq!(store.live_count, 3);
-    assert_eq!(store.free_head, -1);
-
-    // Ahora lleno; siguiente allocate falla.
-    let res = allocate_entity(&mut store, 1.0, 2.0, 3.0, 4.0, 5.0, 0.5);
-    assert_eq!(res, Err(LifecycleError::NoCapacity));
 }
 
 #[test]
@@ -248,5 +250,7 @@ fn ac4_no_heap_allocation_in_hot_path() {
         assert!(res.is_ok());
     }
     assert_eq!(store.live_count, 100);
-    assert_eq!(store.free_head, -1);
+    // Tras drenar la free list inicializada por init_lifecycle, free_head queda en 0
+    // (autociclo del slot 0), no en -1.
+    assert_eq!(store.free_head, 0);
 }

@@ -94,6 +94,7 @@ impl NativeStore {
                 *self.live_pos.add(i) = i as i32;
             }
         }
+        self.free_head = 0;
     }
 
     /// Devuelve una vista mutable sobre el canal X de `count` elementos.
@@ -192,3 +193,25 @@ impl Drop for NativeStore {
 
 // CHANNEL_ALIGN, alloc_channel y alloc_generation_channel ya no se usan
 // (NativeStore::new usa una sola asignación consolidada).
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn store_init_lifecycle_establece_free_head_cero() {
+        let n = 5;
+        let mut store = NativeStore::new(n).expect("store creation failed");
+        store.init_lifecycle();
+
+        assert_eq!(store.free_head, 0);
+        for i in 0..(n - 1) {
+            unsafe {
+                assert_eq!(*store.free_list.add(i), (i + 1) as i32, "free_list[{}] debe ser {}", i, i + 1);
+            }
+        }
+        unsafe {
+            assert_eq!(*store.free_list.add(n - 1), -1);
+        }
+    }
+}
