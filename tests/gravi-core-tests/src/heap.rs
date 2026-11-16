@@ -85,3 +85,15 @@ fn ac_reset_max() {
     assert_eq!(hv.max_delta(), 0);
     drop(v);
 }
+
+#[test]
+fn ac_heap_box_delta_positive() {
+    let mut hv = HeapVerifier::new();
+    hv.begin_frame();
+    let v = gravi_core::heap_verifier::probe_allocate_usize();
+    let _ = *v;
+    let report = hv.end_frame();
+    assert!(report.delta_bytes > 0, "delta_bytes={}", report.delta_bytes);
+    assert!(hv.max_delta() > 0, "max_delta={}", hv.max_delta());
+    drop(v);
+}

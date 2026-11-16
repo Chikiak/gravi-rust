@@ -9,9 +9,28 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 // ---------------------------------------------------------------------------
 // Contador global de bytes del heap (netos, nunca negativos).
+// thread_local para evitar carreras entre hilos de prueba que corren en
+// paralelo (cargo test ejecuta tests de un mismo binary en hilos distintos).
 // ---------------------------------------------------------------------------
 
-static HEAP_BYTES: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    static HEAP_BYTES: AtomicUsize = AtomicUsize::new(0);
+}
+
+/// Accesos al contador del heap del hilo actual (evita carreras entre hilos
+/// de prueba que corren en paralelo bajo `cargo test`).
+fn heap_add(n: usize) {
+    HEAP_BYTES.with(|c| c.fetch_add(n, Ordering::Relaxed));
+}
+fn heap_sub(n: usize) {
+    HEAP_BYTES.with(|c| c.fetch_sub(n, Ordering::Relaxed));
+}
+fn heap_load() -> usize {
+    HEAP_BYTES.with(|c| c.load(Ordering::Relaxed))
+}
+fn heap_store(n: usize) {
+    HEAP_BYTES.with(|c| c.store(n, Ordering::Relaxed));
+}
 
 /// Allocador que envuelve `System` y cuenta asignaciones/liberaciones del heap.
 pub struct CountingAllocator;
@@ -20,7 +39,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ptr = unsafe { System.alloc(layout) };
         if !ptr.is_null() {
-            HEAP_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
+            heap_add(layout.size());
         }
         ptr
     }
@@ -28,14 +47,14 @@ unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let ptr = unsafe { System.alloc_zeroed(layout) };
         if !ptr.is_null() {
-            HEAP_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
+            heap_add(layout.size());
         }
         ptr
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         unsafe { System.dealloc(ptr, layout) };
-        HEAP_BYTES.fetch_sub(layout.size(), Ordering::Relaxed);
+        heap_sub(layout.size());
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
@@ -44,9 +63,9 @@ unsafe impl GlobalAlloc for CountingAllocator {
         if !ptr.is_null() {
             let delta = new_size as isize - old as isize;
             if delta > 0 {
-                HEAP_BYTES.fetch_add(delta as usize, Ordering::Relaxed);
+                heap_add(delta as usize);
             } else {
-                HEAP_BYTES.fetch_sub((-delta) as usize, Ordering::Relaxed);
+                heap_sub((-delta) as usize);
             }
         }
         ptr
@@ -112,14 +131,14 @@ impl HeapVerifier {
     pub fn begin_frame(&mut self) {
         self.frame_id = self.frame_id.wrapping_add(1);
         unsafe {
-            *self.start_bytes.get() = HEAP_BYTES.load(Ordering::Relaxed);
+            *self.start_bytes.get() = heap_load();
         }
     }
 
     /// Marca el fin de un frame y devuelve el reporte. Actualiza
     /// `max_delta` si el delta neto de este frame lo supera.
     pub fn end_frame(&mut self) -> HeapReport {
-        let end = HEAP_BYTES.load(Ordering::Relaxed);
+        let end = heap_load();
         let start = unsafe { *self.start_bytes.get() };
         let delta = end as isize - start as isize;
         if delta > self.max_delta {
@@ -147,12 +166,12 @@ impl HeapVerifier {
     /// Reinicia el contador global `HEAP_BYTES` a 0.
     /// Útil para aislar mediciones entre tests que comparten el allocador global.
     pub fn reset_heap_bytes(&mut self) {
-        HEAP_BYTES.store(0, Ordering::Relaxed);
+        heap_store(0);
     }
 
     /// Devuelve los bytes del heap actualmente contabilizados.
     pub fn current_heap_bytes(&self) -> usize {
-        HEAP_BYTES.load(Ordering::Relaxed)
+        heap_load()
     }
 }
 

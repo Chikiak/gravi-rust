@@ -107,12 +107,12 @@ pub fn seed_two_body_symmetric_for_verification(
         y[i] = 0.0;
         vx[i] = 0.0;
         vy[i] = 0.0;
-        mass[i] = 1.0;
+        mass[i] = 0.0;
         radius[i] = 0.5;
         i += 1;
     }
 
-    store.live_count = count;
+    store.live_count = 2;
     store.free_head = -1;
     for g in store.generation_slice().iter_mut() {
         *g = 0;
