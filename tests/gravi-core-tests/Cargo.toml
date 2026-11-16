@@ -57,3 +57,7 @@ path = "src/heap.rs"
 [[test]]
 name = "seeders"
 path = "src/seeders.rs"
+
+[[test]]
+name = "dead_body_invariant"
+path = "src/dead_body_invariant.rs"
