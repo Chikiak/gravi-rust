@@ -47,7 +47,7 @@ fn ac_seed_two_body_symmetric_positions_and_velocities() {
     assert_eq!(mass[1], 1.0);
 
     assert_eq!(store.live_count, 2);
-    assert_eq!(store.free_head, -1);
+    assert_eq!(store.free_head, -1); // el seeder resetea free_head = -1 tras init_lifecycle
 }
 
 #[test]
