@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static HEAP_BYTES: AtomicUsize = AtomicUsize::new(0);
 
 /// Allocador que envuelve `System` y cuenta asignaciones/liberaciones del heap.
-struct CountingAllocator;
+pub struct CountingAllocator;
 
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
@@ -51,6 +51,13 @@ unsafe impl GlobalAlloc for CountingAllocator {
         }
         ptr
     }
+}
+
+/// Realiza una asignación de heap real pasando por CountingAllocator.
+/// Usada por tests de integración para verificar que HEAP_BYTES cuenta
+/// asignaciones reales.
+pub fn probe_allocate_usize() -> Box<usize> {
+    Box::new(1usize)
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +142,12 @@ impl HeapVerifier {
     /// Reinicia `max_delta` a 0 (útil entre suites de verificación).
     pub fn reset_max(&mut self) {
         self.max_delta = 0;
+    }
+
+    /// Reinicia el contador global `HEAP_BYTES` a 0.
+    /// Útil para aislar mediciones entre tests que comparten el allocador global.
+    pub fn reset_heap_bytes(&mut self) {
+        HEAP_BYTES.store(0, Ordering::Relaxed);
     }
 
     /// Devuelve los bytes del heap actualmente contabilizados.

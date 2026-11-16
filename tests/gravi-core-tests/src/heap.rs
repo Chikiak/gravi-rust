@@ -42,28 +42,46 @@ fn ac_report_fields_consistent() {
 }
 
 #[test]
+fn ac_allocator_global_cuenta_asignaciones_reales() {
+    let mut hv = HeapVerifier::new();
+    hv.begin_frame();
+    let v = gravi_core::heap_verifier::probe_allocate_usize();
+    let _ = *v;
+    let report = hv.end_frame();
+    assert!(report.delta_bytes > 0, "delta_bytes={}", report.delta_bytes);
+    assert!(report.max_delta_bytes > 0, "max_delta_bytes={}", report.max_delta_bytes);
+    assert!(hv.max_delta() > 0, "max_delta={}", hv.max_delta());
+    hv.begin_frame();
+    let report2 = hv.end_frame();
+    assert_eq!(report2.delta_bytes, 0, "delta_bytes={}", report2.delta_bytes);
+    drop(v);
+}
+
+#[test]
 fn ac_max_delta_tracks_peak() {
     let mut hv = HeapVerifier::new();
     hv.begin_frame();
     let _r1 = hv.end_frame();
     assert_eq!(_r1.max_delta_bytes, 0);
     hv.begin_frame();
-    let _v = Box::new(1usize);
-    drop(_v);
+    let v = gravi_core::heap_verifier::probe_allocate_usize();
+    let _ = *v;
     let _r2 = hv.end_frame();
-    assert_eq!(_r2.delta_bytes, 0);
-    assert_eq!(_r2.max_delta_bytes, 0);
-    assert_eq!(hv.max_delta(), 0);
+    assert!(_r2.delta_bytes > 0, "delta_bytes={}", _r2.delta_bytes);
+    assert!(_r2.max_delta_bytes > 0, "max_delta_bytes={}", _r2.max_delta_bytes);
+    assert!(hv.max_delta() > 0, "max_delta={}", hv.max_delta());
+    drop(v);
 }
 
 #[test]
 fn ac_reset_max() {
     let mut hv = HeapVerifier::new();
     hv.begin_frame();
-    let _v = Box::new(1usize);
-    drop(_v);
+    let v = gravi_core::heap_verifier::probe_allocate_usize();
+    let _ = *v;
     let _r = hv.end_frame();
-    assert_eq!(_r.max_delta_bytes, 0);
+    assert!(_r.delta_bytes > 0, "delta_bytes={}", _r.delta_bytes);
     hv.reset_max();
     assert_eq!(hv.max_delta(), 0);
+    drop(v);
 }

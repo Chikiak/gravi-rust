@@ -26,5 +26,10 @@ pub mod collisions;
 pub mod diagnostics;
 pub mod verifier;
 pub mod heap_verifier;
+
+use crate::heap_verifier::CountingAllocator;
+#[global_allocator]
+static ALLOC: CountingAllocator = CountingAllocator;
+
 pub mod scenario;
 pub mod parallel_dispatcher;

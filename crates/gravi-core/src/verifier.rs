@@ -4,6 +4,7 @@
 
 use crate::constants::PhysicsConstants;
 use crate::diagnostics::compute_diagnostics;
+use crate::heap_verifier::HeapVerifier;
 use crate::physics_step::PhysicsStep;
 use crate::simulation_store::{allocate, clear_forces, compute_forces_brute, integrate_symplectic_euler, SimConfig};
 use crate::store::NativeStore;
@@ -121,8 +122,9 @@ pub fn seed_two_body_symmetric_for_verification(
 /// Ejecuta la verificación para un preset dado.
 ///
 /// Retorna un `VerificationResult` con las derivas de energía, momento y
-/// centro de masas, más `max_heap_delta` (siempre 0: zero-allocation por
-/// construcción en el hot path).
+/// centro de masas, más `max_heap_delta` (máximo `delta_bytes` medido por
+/// `HeapVerifier` en cada frame del bucle de ticks; zero-allocation en el
+/// hot path por construcción, por lo tanto medido como 0).
 pub fn verify(preset: VerifierPreset) -> VerificationResult {
     let body_count = preset.body_count();
     let ticks = preset.ticks();
@@ -146,11 +148,23 @@ pub fn verify(preset: VerifierPreset) -> VerificationResult {
     let d0 = compute_diagnostics(&store).expect("verifier: diagnóstico inicial falló");
 
     // Hot path: 0 allocations por tick (solo punteros crudos sobre memoria nativa).
+    // Se mide el delta de heap por frame con HeapVerifier.
+    let mut heap = HeapVerifier::new();
+    let mut max_heap_delta: usize = 0;
     let mut _tick: u64 = 0;
     while _tick < ticks {
+        heap.reset_heap_bytes();
+        heap.begin_frame();
         clear_forces(&mut store);
         compute_forces_brute(&store, c.g);
         integrate_symplectic_euler(&mut store, dt, c.damping);
+        let report = heap.end_frame();
+        if report.delta_bytes > 0 {
+            let delta = report.delta_bytes as usize;
+            if delta > max_heap_delta {
+                max_heap_delta = delta;
+            }
+        }
         _tick += 1;
     }
 
@@ -201,7 +215,7 @@ pub fn verify(preset: VerifierPreset) -> VerificationResult {
         com_initial: (cm0x, cm0y),
         com_final: (cm1x, cm1y),
         com_drift_px,
-        max_heap_delta: 0,
+        max_heap_delta,
         passed,
     }
 }
