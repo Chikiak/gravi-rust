@@ -337,10 +337,11 @@ fn insert_body_iterative(
                 // alloc_node avanza 1; se avanzan los 3 restantes para que la
                 // siguiente alloc_node no sobrescriba los hijos ya escritos.
                 let child_base = arena.alloc_node()?;
-                arena.next_free = child_base + 4;
-                if arena.next_free > arena.capacity {
+                if arena.next_free + 3 > arena.capacity {
+                    arena.next_free = child_base; // deshacer el alloc_node ya consumido
                     return Err(QuadtreeError::Overflow);
                 }
+                arena.next_free = child_base + 4;
                 for k in 0..4usize {
                     unsafe {
                         arena.write_node(

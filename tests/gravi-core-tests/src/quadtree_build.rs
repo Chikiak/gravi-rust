@@ -334,3 +334,73 @@ fn a2_root_solo_cuerpos_vivos_ignorando_muertos() {
     assert_eq!(cy, 15.0);
     assert_eq!(half, 5.0); // extent 10 / 2
 }
+
+#[test]
+fn ac_alloc_node_no_avanza_sin_capacidad() {
+    let mut arena = QuadtreeArena::allocate(1).unwrap(); // cap >= 16
+    let cap = arena.capacity;
+    // llenar hasta el tope
+    for _ in 0..cap {
+        assert!(arena.alloc_node().is_ok());
+    }
+    let antes = arena.next_free;
+    assert_eq!(antes, cap);
+    assert_eq!(
+        arena.alloc_node().unwrap_err(),
+        QuadtreeError::Overflow
+    );
+    assert_eq!(arena.next_free, cap, "next_free no debe cambiar tras Overflow");
+}
+
+#[test]
+fn ac_overflow_no_corrompe_arena() {
+    // 2 cuerpos que forzarán subdivisión
+    let mut store = make_store(2);
+    store.x_slice()[0] = 10.0;
+    store.y_slice()[0] = 10.0;
+    store.mass_slice()[0] = 1.0;
+    store.x_slice()[1] = 90.0;
+    store.y_slice()[1] = 90.0;
+    store.mass_slice()[1] = 2.0;
+    store.live_count = 2;
+    let li = store.live_indices_slice();
+    li[0] = 0;
+    li[1] = 1;
+
+    // Arena artificialmente pequeña: capacidad 4 (< 5 nodos para raíz + 4 hijos).
+    // Se usa allocate(1) (cap=32) y se reduce capacity para forzar Overflow
+    // sin modificar QuadtreeArena::allocate.
+    let mut arena = QuadtreeArena::allocate(1).unwrap();
+    arena.capacity = 4;
+
+    let antes = arena.next_free; // 0
+    let res = build_quadtree(&store, &mut arena, 50.0, 50.0, 100.0);
+    assert!(
+        res.is_err(),
+        "esperamos Overflow por falta de 4 slots para subdividir"
+    );
+    match res.unwrap_err() {
+        QuadtreeError::Overflow => (),
+        e => panic!("esperaba Overflow, got {:?}", e),
+    }
+    assert_eq!(
+        arena.next_free,
+        antes + 1,
+        "solo el nodo raíz se asignó antes del Overflow; next_free no debe haberse disparado"
+    );
+    assert!(
+        arena.next_free <= arena.capacity,
+        "arena no corrupta: next_free={} > capacity={}",
+        arena.next_free,
+        arena.capacity
+    );
+
+    // Reset y reintento con capacidad suficiente
+    arena.next_free = 0;
+    arena.capacity = 32;
+    let res2 = build_quadtree(&store, &mut arena, 50.0, 50.0, 100.0);
+    assert!(
+        res2.is_ok(),
+        "tras reset con capacidad suficiente debe funcionar"
+    );
+}
