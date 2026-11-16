@@ -487,3 +487,146 @@ fn brute_force_two_body_newton_third_law() {
     assert!((fx[0] + fx[1]).abs() < 1e-4, "Fx[0]={} Fx[1]={}", fx[0], fx[1]);
     assert!((fy[0] + fy[1]).abs() < 1e-4, "Fy[0]={} Fy[1]={}", fy[0], fy[1]);
 }
+
+// ===========================================================================
+// R1-02: integración sobre vivos (slots muertos inertes)
+// ===========================================================================
+
+#[test]
+fn cuerpo_muerto_no_se_integra() {
+    let mut store = NativeStore::new(3).expect("store creation failed");
+    store.init_lifecycle();
+
+    // Setup determinista: 3 cuerpos, slot 1 muerto.
+    {
+        let x = store.x_slice();
+        let y = store.y_slice();
+        let vx = store.vx_slice();
+        let vy = store.vy_slice();
+        let mass = store.mass_slice();
+        let radius = store.radius_slice();
+        x[0] = 10.0; y[0] = 10.0; vx[0] = 1.0; vy[0] = 2.0; mass[0] = 1.0; radius[0] = 0.5;
+        x[1] = 20.0; y[1] = 20.0; vx[1] = 3.0; vy[1] = 4.0; mass[1] = -1.0; radius[1] = 0.5; // muerto
+        x[2] = 30.0; y[2] = 30.0; vx[2] = 5.0; vy[2] = 6.0; mass[2] = 2.0; radius[2] = 0.5;
+    }
+    store.live_count = 2; // slots 0 y 2 vivos
+    store.free_head = -1;
+
+    // Estado inicial del slot muerto.
+    let x_dead = store.x_slice()[1];
+    let y_dead = store.y_slice()[1];
+    let vx_dead = store.vx_slice()[1];
+    let vy_dead = store.vy_slice()[1];
+
+    // N ticks del pipeline completo.
+    let ticks: u64 = 50;
+    let mut t = 0u64;
+    while t < ticks {
+        clear_forces(&mut store);
+        compute_forces_brute(&store, G);
+        integrate_symplectic_euler(&mut store, DT, 1.0);
+        t += 1;
+    }
+
+    // El slot muerto no se movió.
+    assert_eq!(store.x_slice()[1], x_dead, "x del muerto cambió");
+    assert_eq!(store.y_slice()[1], y_dead, "y del muerto cambió");
+    assert_eq!(store.vx_slice()[1], vx_dead, "vx del muerto cambió");
+    assert_eq!(store.vy_slice()[1], vy_dead, "vy del muerto cambió");
+    assert_eq!(store.mass_slice()[1], -1.0, "masa del muerto no es -1.0");
+}
+
+#[test]
+fn pipeline_con_muerto_equivale_control() {
+    let g = 1.0f32;
+    let ticks: u64 = 10;
+
+    // Store A: 4 cuerpos, mass[2] = -1.0 (muerto entre vivos).
+    let mut store_a = NativeStore::new(4).expect("store creation failed");
+    store_a.init_lifecycle();
+    {
+        let x = store_a.x_slice();
+        let y = store_a.y_slice();
+        let vx = store_a.vx_slice();
+        let vy = store_a.vy_slice();
+        let mass = store_a.mass_slice();
+        let radius = store_a.radius_slice();
+        x[0] = 10.0; y[0] = 10.0; vx[0] = 1.0; vy[0] = 2.0; mass[0] = 1.0; radius[0] = 0.5;
+        x[1] = 20.0; y[1] = 20.0; vx[1] = 3.0; vy[1] = 4.0; mass[1] = 2.0; radius[1] = 0.5;
+        x[2] = 30.0; y[2] = 30.0; vx[2] = 5.0; vy[2] = 6.0; mass[2] = -1.0; radius[2] = 0.5; // muerto
+        x[3] = 40.0; y[3] = 40.0; vx[3] = 7.0; vy[3] = 8.0; mass[3] = 3.0; radius[3] = 0.5;
+    }
+    store_a.live_count = 3;
+    store_a.free_head = -1;
+    // live_indices[0..3] debe apuntar solo a vivos (0,1,3); el muerto (2) queda fuera del rango vivo.
+    {
+        let li = store_a.live_indices_slice();
+        let lp = store_a.live_pos_slice();
+        li[0] = 0; li[1] = 1; li[2] = 3; li[3] = 2;
+        lp[0] = 0; lp[1] = 1; lp[3] = 2; lp[2] = 3;
+    }
+
+    // Store B: control con 3 vivos (mismos datos que vivos de A).
+    let mut store_b = NativeStore::new(3).expect("store creation failed");
+    store_b.init_lifecycle();
+    {
+        let x = store_b.x_slice();
+        let y = store_b.y_slice();
+        let vx = store_b.vx_slice();
+        let vy = store_b.vy_slice();
+        let mass = store_b.mass_slice();
+        let radius = store_b.radius_slice();
+        x[0] = 10.0; y[0] = 10.0; vx[0] = 1.0; vy[0] = 2.0; mass[0] = 1.0; radius[0] = 0.5;
+        x[1] = 20.0; y[1] = 20.0; vx[1] = 3.0; vy[1] = 4.0; mass[1] = 2.0; radius[1] = 0.5;
+        x[2] = 40.0; y[2] = 40.0; vx[2] = 7.0; vy[2] = 8.0; mass[2] = 3.0; radius[2] = 0.5;
+    }
+    store_b.live_count = 3;
+    store_b.free_head = -1;
+
+    // Pipeline idéntico en ambos.
+    let mut t = 0u64;
+    while t < ticks {
+        clear_forces(&mut store_a);
+        compute_forces_brute(&store_a, g);
+        integrate_symplectic_euler(&mut store_a, DT, 1.0);
+
+        clear_forces(&mut store_b);
+        compute_forces_brute(&store_b, g);
+        integrate_symplectic_euler(&mut store_b, DT, 1.0);
+
+        t += 1;
+    }
+
+    // Diagnósticos bit-iguales.
+    let da = compute_diagnostics(&store_a).unwrap();
+    let db = compute_diagnostics(&store_b).unwrap();
+    assert_eq!(da.total_energy, db.total_energy, "total_energy");
+    assert_eq!(da.linear_momentum_x, db.linear_momentum_x, "momentum_x");
+    assert_eq!(da.linear_momentum_y, db.linear_momentum_y, "momentum_y");
+    assert_eq!(da.center_of_mass_x, db.center_of_mass_x, "com_x");
+    assert_eq!(da.center_of_mass_y, db.center_of_mass_y, "com_y");
+
+    // Fuerzas, posiciones y velocidades de vivos bit-iguales.
+    // A: vivos en índices 0,1,3 → B: vivos en índices 0,1,2.
+    let fa_x = store_a.fx_slice();
+    let fa_y = store_a.fy_slice();
+    let fb_x = store_b.fx_slice();
+    let fb_y = store_b.fy_slice();
+    let ax = store_a.x_slice();
+    let ay = store_a.y_slice();
+    let avx = store_a.vx_slice();
+    let avy = store_a.vy_slice();
+    let bx = store_b.x_slice();
+    let by = store_b.y_slice();
+    let bvx = store_b.vx_slice();
+    let bvy = store_b.vy_slice();
+
+    for (ia, ib) in [(0usize, 0), (1, 1), (3, 2)] {
+        assert_eq!(fa_x[ia], fb_x[ib], "fx[{} vs {}]", ia, ib);
+        assert_eq!(fa_y[ia], fb_y[ib], "fy[{} vs {}]", ia, ib);
+        assert_eq!(ax[ia], bx[ib], "x[{} vs {}]", ia, ib);
+        assert_eq!(ay[ia], by[ib], "y[{} vs {}]", ia, ib);
+        assert_eq!(avx[ia], bvx[ib], "vx[{} vs {}]", ia, ib);
+        assert_eq!(avy[ia], bvy[ib], "vy[{} vs {}]", ia, ib);
+    }
+}
