@@ -1,7 +1,7 @@
 //! Tests extraídos de crates/gravi-core/src/simulation_store.rs (Issue 3 — criterios de aceptación).
 //! Integration test: solo API pública de gravi_core.
 
-use gravi_core::simulation_store::{allocate, dispose, reflect_bounds, seed_linear, SimConfig};
+use gravi_core::simulation_store::{allocate, clear_forces, compute_forces_brute, dispose, reflect_bounds, seed_linear, SimConfig};
 
 fn config() -> SimConfig {
     SimConfig {
@@ -110,4 +110,119 @@ fn dispose_then_drop_no_double_free() {
     let mut store = allocate(config()).unwrap();
     dispose(&mut store);
     // Drop ejecuta al salir del scope sin doble liberación.
+}
+
+// ===========================================================================
+// R1-02: fuerzas escalares con filtro de muertos
+// ===========================================================================
+
+#[test]
+fn fuerza_cero_con_muerto_entre_vivos() {
+    let g = 1.0f32;
+
+    // Store A: 4 cuerpos, mass[2] = -1.0 (muerto entre vivos).
+    let mut store_a = allocate(SimConfig {
+        body_count: 4,
+        width: 100.0,
+        height: 100.0,
+    })
+    .unwrap();
+    store_a.init_lifecycle();
+    {
+        let x = store_a.x_slice();
+        let y = store_a.y_slice();
+        let vx = store_a.vx_slice();
+        let vy = store_a.vy_slice();
+        let mass = store_a.mass_slice();
+        let radius = store_a.radius_slice();
+        x[0] = 10.0;
+        y[0] = 10.0;
+        vx[0] = 1.0;
+        vy[0] = 2.0;
+        mass[0] = 1.0;
+        radius[0] = 0.5;
+        x[1] = 20.0;
+        y[1] = 20.0;
+        vx[1] = 3.0;
+        vy[1] = 4.0;
+        mass[1] = 2.0;
+        radius[1] = 0.5;
+        x[2] = 30.0;
+        y[2] = 30.0;
+        vx[2] = 5.0;
+        vy[2] = 6.0;
+        mass[2] = -1.0; // muerto
+        radius[2] = 0.5;
+        x[3] = 40.0;
+        y[3] = 40.0;
+        vx[3] = 7.0;
+        vy[3] = 8.0;
+        mass[3] = 3.0;
+        radius[3] = 0.5;
+    }
+    store_a.live_count = 3;
+    store_a.free_head = -1;
+
+    // Store B: control con 3 vivos (mismos datos que vivos de A).
+    let mut store_b = allocate(SimConfig {
+        body_count: 3,
+        width: 100.0,
+        height: 100.0,
+    })
+    .unwrap();
+    store_b.init_lifecycle();
+    {
+        let x = store_b.x_slice();
+        let y = store_b.y_slice();
+        let vx = store_b.vx_slice();
+        let vy = store_b.vy_slice();
+        let mass = store_b.mass_slice();
+        let radius = store_b.radius_slice();
+        x[0] = 10.0;
+        y[0] = 10.0;
+        vx[0] = 1.0;
+        vy[0] = 2.0;
+        mass[0] = 1.0;
+        radius[0] = 0.5;
+        x[1] = 20.0;
+        y[1] = 20.0;
+        vx[1] = 3.0;
+        vy[1] = 4.0;
+        mass[1] = 2.0;
+        radius[1] = 0.5;
+        x[2] = 40.0;
+        y[2] = 40.0;
+        vx[2] = 7.0;
+        vy[2] = 8.0;
+        mass[2] = 3.0;
+        radius[2] = 0.5;
+    }
+    store_b.live_count = 3;
+    store_b.free_head = -1;
+
+    clear_forces(&mut store_a);
+    compute_forces_brute(&store_a, g);
+    clear_forces(&mut store_b);
+    compute_forces_brute(&store_b, g);
+
+    let fa_x = store_a.fx_slice();
+    let fa_y = store_a.fy_slice();
+    let fb_x = store_b.fx_slice();
+    let fb_y = store_b.fy_slice();
+
+    // Vivos de A (índices 0,1,3) bit-iguales a control B (índices 0,1,2).
+    assert_eq!(fa_x[0], fb_x[0], "fx[0]");
+    assert_eq!(fa_y[0], fb_y[0], "fy[0]");
+    assert_eq!(fa_x[1], fb_x[1], "fx[1]");
+    assert_eq!(fa_y[1], fb_y[1], "fy[1]");
+    assert_eq!(fa_x[3], fb_x[2], "fx[3] vs control[2]");
+    assert_eq!(fa_y[3], fb_y[2], "fy[3] vs control[2]");
+
+    // Muerto en A: fuerza cero, masa inalterada.
+    assert_eq!(fa_x[2], 0.0, "fx del muerto debe ser 0");
+    assert_eq!(fa_y[2], 0.0, "fy del muerto debe ser 0");
+    assert_eq!(store_a.mass_slice()[2], -1.0, "masa del muerto inalterada");
+
+    dispose(&mut store_a);
+    dispose(&mut store_b);
 }

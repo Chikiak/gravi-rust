@@ -397,12 +397,22 @@ fn compute_forces_brute_range_scalar(
         let fy = store.fy;
         let mut i = start;
         while i < end {
+            // Objetivo muerto: no escribir fuerza.
+            if *mass.add(i) < 0.0f32 {
+                i += 1;
+                continue;
+            }
             let xi = *x.add(i);
             let yi = *y.add(i);
             let mut accx = 0.0f32;
             let mut accy = 0.0f32;
             let mut j = 0usize;
             while j < count {
+                // Fuente muerta: no aporta contribución.
+                if *mass.add(j) < 0.0f32 {
+                    j += 1;
+                    continue;
+                }
                 let dx = *x.add(j) - xi;
                 let dy = *y.add(j) - yi;
                 let r2 = dx * dx + dy * dy + SOFTENING_SQ;
@@ -438,54 +448,150 @@ pub fn integrate_symplectic_euler(store: &mut NativeStore, dt: f32, damping: f32
         let fx = store.fx;
         let fy = store.fy;
         let mass = store.mass;
-        let count = store.count;
+        let live_indices = store.live_indices;
+        let live_count = store.live_count;
         let dt8 = f32x8::splat(dt);
         let damping8 = f32x8::splat(damping);
-        let mut i = 0usize;
-        while i + 7 < count {
-            // Carga 8 cuerpos.
-            let fx8 = f32x8::from_slice(std::slice::from_raw_parts(fx.add(i), 8));
-            let fy8 = f32x8::from_slice(std::slice::from_raw_parts(fy.add(i), 8));
-            let m8 = f32x8::from_slice(std::slice::from_raw_parts(mass.add(i), 8));
-            let vx8 = f32x8::from_slice(std::slice::from_raw_parts(vx.add(i), 8));
-            let vy8 = f32x8::from_slice(std::slice::from_raw_parts(vy.add(i), 8));
-            let x8 = f32x8::from_slice(std::slice::from_raw_parts(x.add(i), 8));
-            let y8 = f32x8::from_slice(std::slice::from_raw_parts(y.add(i), 8));
 
-            // a = F / m (usa multiplicación por inversa precalculada: no división)
-            let inv_m = f32x8::splat(1.0f32) / m8;
-            let ax = fx8 * inv_m;
-            let ay = fy8 * inv_m;
+        // Iterar solo sobre slots vivos: live_indices[0..live_count].
+        let mut q = 0usize;
+        while q + 7 < live_count {
+            // Bloque de 8: solo SIMD si todos los 8 son vivos (masa >= 0).
+            let idx0 = *live_indices.add(q) as usize;
+            let idx1 = *live_indices.add(q + 1) as usize;
+            let idx2 = *live_indices.add(q + 2) as usize;
+            let idx3 = *live_indices.add(q + 3) as usize;
+            let idx4 = *live_indices.add(q + 4) as usize;
+            let idx5 = *live_indices.add(q + 5) as usize;
+            let idx6 = *live_indices.add(q + 6) as usize;
+            let idx7 = *live_indices.add(q + 7) as usize;
 
-            // v += a * dt ; v *= damping
-            let nvx = (vx8 + ax * dt8) * damping8;
-            let nvy = (vy8 + ay * dt8) * damping8;
+            let all_live =
+                *mass.add(idx0) >= 0.0f32
+                    && *mass.add(idx1) >= 0.0f32
+                    && *mass.add(idx2) >= 0.0f32
+                    && *mass.add(idx3) >= 0.0f32
+                    && *mass.add(idx4) >= 0.0f32
+                    && *mass.add(idx5) >= 0.0f32
+                    && *mass.add(idx6) >= 0.0f32
+                    && *mass.add(idx7) >= 0.0f32;
 
-            // x += v * dt (usa la velocidad nueva — semisimpléctico)
-            let nx = x8 + nvx * dt8;
-            let ny = y8 + nvy * dt8;
+            if all_live {
+                let fx8 = f32x8::from_array([
+                    *fx.add(idx0), *fx.add(idx1), *fx.add(idx2), *fx.add(idx3),
+                    *fx.add(idx4), *fx.add(idx5), *fx.add(idx6), *fx.add(idx7),
+                ]);
+                let fy8 = f32x8::from_array([
+                    *fy.add(idx0), *fy.add(idx1), *fy.add(idx2), *fy.add(idx3),
+                    *fy.add(idx4), *fy.add(idx5), *fy.add(idx6), *fy.add(idx7),
+                ]);
+                let m8 = f32x8::from_array([
+                    *mass.add(idx0), *mass.add(idx1), *mass.add(idx2), *mass.add(idx3),
+                    *mass.add(idx4), *mass.add(idx5), *mass.add(idx6), *mass.add(idx7),
+                ]);
+                let vx8 = f32x8::from_array([
+                    *vx.add(idx0), *vx.add(idx1), *vx.add(idx2), *vx.add(idx3),
+                    *vx.add(idx4), *vx.add(idx5), *vx.add(idx6), *vx.add(idx7),
+                ]);
+                let vy8 = f32x8::from_array([
+                    *vy.add(idx0), *vy.add(idx1), *vy.add(idx2), *vy.add(idx3),
+                    *vy.add(idx4), *vy.add(idx5), *vy.add(idx6), *vy.add(idx7),
+                ]);
+                let x8 = f32x8::from_array([
+                    *x.add(idx0), *x.add(idx1), *x.add(idx2), *x.add(idx3),
+                    *x.add(idx4), *x.add(idx5), *x.add(idx6), *x.add(idx7),
+                ]);
+                let y8 = f32x8::from_array([
+                    *y.add(idx0), *y.add(idx1), *y.add(idx2), *y.add(idx3),
+                    *y.add(idx4), *y.add(idx5), *y.add(idx6), *y.add(idx7),
+                ]);
 
-            // Escribe de vuelta.
-            nx.copy_to_slice(std::slice::from_raw_parts_mut(x.add(i), 8));
-            ny.copy_to_slice(std::slice::from_raw_parts_mut(y.add(i), 8));
-            nvx.copy_to_slice(std::slice::from_raw_parts_mut(vx.add(i), 8));
-            nvy.copy_to_slice(std::slice::from_raw_parts_mut(vy.add(i), 8));
+                let inv_m = f32x8::splat(1.0f32) / m8;
+                let ax = fx8 * inv_m;
+                let ay = fy8 * inv_m;
 
-            i += 8;
+                let nvx = (vx8 + ax * dt8) * damping8;
+                let nvy = (vy8 + ay * dt8) * damping8;
+
+                let nx = x8 + nvx * dt8;
+                let ny = y8 + nvy * dt8;
+                let nx_a = nx.to_array();
+                let ny_a = ny.to_array();
+                let nvx_a = nvx.to_array();
+                let nvy_a = nvy.to_array();
+
+                *x.add(idx0) = nx_a[0];
+                *x.add(idx1) = nx_a[1];
+                *x.add(idx2) = nx_a[2];
+                *x.add(idx3) = nx_a[3];
+                *x.add(idx4) = nx_a[4];
+                *x.add(idx5) = nx_a[5];
+                *x.add(idx6) = nx_a[6];
+                *x.add(idx7) = nx_a[7];
+                *y.add(idx0) = ny_a[0];
+                *y.add(idx1) = ny_a[1];
+                *y.add(idx2) = ny_a[2];
+                *y.add(idx3) = ny_a[3];
+                *y.add(idx4) = ny_a[4];
+                *y.add(idx5) = ny_a[5];
+                *y.add(idx6) = ny_a[6];
+                *y.add(idx7) = ny_a[7];
+                *vx.add(idx0) = nvx_a[0];
+                *vx.add(idx1) = nvx_a[1];
+                *vx.add(idx2) = nvx_a[2];
+                *vx.add(idx3) = nvx_a[3];
+                *vx.add(idx4) = nvx_a[4];
+                *vx.add(idx5) = nvx_a[5];
+                *vx.add(idx6) = nvx_a[6];
+                *vx.add(idx7) = nvx_a[7];
+                *vy.add(idx0) = nvy_a[0];
+                *vy.add(idx1) = nvy_a[1];
+                *vy.add(idx2) = nvy_a[2];
+                *vy.add(idx3) = nvy_a[3];
+                *vy.add(idx4) = nvy_a[4];
+                *vy.add(idx5) = nvy_a[5];
+                *vy.add(idx6) = nvy_a[6];
+                *vy.add(idx7) = nvy_a[7];
+            } else {
+                // Fallback scalar por slot vivo en el bloque.
+                for k in 0..8usize {
+                    let idx = *live_indices.add(q + k) as usize;
+                    let m = *mass.add(idx);
+                    if m < 0.0f32 {
+                        continue;
+                    }
+                    let inv_m = 1.0f32 / m;
+                    let ax = *fx.add(idx) * inv_m;
+                    let ay = *fy.add(idx) * inv_m;
+                    let nvx = (*vx.add(idx) + ax * dt) * damping;
+                    let nvy = (*vy.add(idx) + ay * dt) * damping;
+                    *x.add(idx) += nvx * dt;
+                    *y.add(idx) += nvy * dt;
+                    *vx.add(idx) = nvx;
+                    *vy.add(idx) = nvy;
+                }
+            }
+
+            q += 8;
         }
-        // Resto scalar.
-        while i < count {
-            let m = *mass.add(i);
-            let inv_m = if m != 0.0 { 1.0f32 / m } else { 0.0f32 };
-            let ax = *fx.add(i) * inv_m;
-            let ay = *fy.add(i) * inv_m;
-            let nvx = (*vx.add(i) + ax * dt) * damping;
-            let nvy = (*vy.add(i) + ay * dt) * damping;
-            *x.add(i) += nvx * dt;
-            *y.add(i) += nvy * dt;
-            *vx.add(i) = nvx;
-            *vy.add(i) = nvy;
-            i += 1;
+        // Resto scalar por slot vivo.
+        while q < live_count {
+            let idx = *live_indices.add(q) as usize;
+            let m = *mass.add(idx);
+            if m < 0.0f32 {
+                q += 1;
+                continue;
+            }
+            let inv_m = 1.0f32 / m;
+            let ax = *fx.add(idx) * inv_m;
+            let ay = *fy.add(idx) * inv_m;
+            let nvx = (*vx.add(idx) + ax * dt) * damping;
+            let nvy = (*vy.add(idx) + ay * dt) * damping;
+            *x.add(idx) += nvx * dt;
+            *y.add(idx) += nvy * dt;
+            *vx.add(idx) = nvx;
+            *vy.add(idx) = nvy;
+            q += 1;
         }
     }
 }
