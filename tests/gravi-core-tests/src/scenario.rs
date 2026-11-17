@@ -67,3 +67,67 @@ fn ac4_header_validated_before_allocate_bad_version() {
     assert!(load_scenario(&path).is_err());
     let _ = fs::remove_file(&path);
 }
+
+#[test]
+fn ac5_load_scenario_rechaza_x_nan() {
+    let mut store = allocate(config()).unwrap();
+    seed_linear(&mut store, 100.0, 100.0, 10.0, 1337);
+    store.x_slice()[0] = f32::NAN;
+
+    let path = std::env::temp_dir().join("gravi_scenario_ac5_x_nan.grav");
+    let _ = save_scenario(&path, &store, 2);
+    let err = match load_scenario(&path) {
+        Err(e) => e,
+        Ok(_) => panic!("load_scenario aceptó x[0] = NaN"),
+    };
+    assert!(err.contains("x[0]"), "error inesperado: {err}");
+    let _ = fs::remove_file(&path);
+}
+
+#[test]
+fn ac5_load_scenario_rechaza_y_inf() {
+    let mut store = allocate(config()).unwrap();
+    seed_linear(&mut store, 100.0, 100.0, 10.0, 1337);
+    store.y_slice()[0] = f32::INFINITY;
+
+    let path = std::env::temp_dir().join("gravi_scenario_ac5_y_inf.grav");
+    let _ = save_scenario(&path, &store, 2);
+    let err = match load_scenario(&path) {
+        Err(e) => e,
+        Ok(_) => panic!("load_scenario aceptó y[0] = Inf"),
+    };
+    assert!(err.contains("y[0]"), "error inesperado: {err}");
+    let _ = fs::remove_file(&path);
+}
+
+#[test]
+fn ac5_load_scenario_rechaza_vx_neg_inf() {
+    let mut store = allocate(config()).unwrap();
+    seed_linear(&mut store, 100.0, 100.0, 10.0, 1337);
+    store.vx_slice()[0] = f32::NEG_INFINITY;
+
+    let path = std::env::temp_dir().join("gravi_scenario_ac5_vx_neg_inf.grav");
+    let _ = save_scenario(&path, &store, 2);
+    let err = match load_scenario(&path) {
+        Err(e) => e,
+        Ok(_) => panic!("load_scenario aceptó vx[0] = -Inf"),
+    };
+    assert!(err.contains("vx[0]"), "error inesperado: {err}");
+    let _ = fs::remove_file(&path);
+}
+
+#[test]
+fn ac5_load_scenario_rechaza_vy_nan() {
+    let mut store = allocate(config()).unwrap();
+    seed_linear(&mut store, 100.0, 100.0, 10.0, 1337);
+    store.vy_slice()[0] = f32::NAN;
+
+    let path = std::env::temp_dir().join("gravi_scenario_ac5_vy_nan.grav");
+    let _ = save_scenario(&path, &store, 2);
+    let err = match load_scenario(&path) {
+        Err(e) => e,
+        Ok(_) => panic!("load_scenario aceptó vy[0] = NaN"),
+    };
+    assert!(err.contains("vy[0]"), "error inesperado: {err}");
+    let _ = fs::remove_file(&path);
+}
