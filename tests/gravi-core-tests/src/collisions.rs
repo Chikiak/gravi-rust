@@ -4,6 +4,7 @@
 use gravi_core::collisions::{
     resolve_collisions, resolve_elastic_collision, resolve_inelastic_collision, CollisionConfig,
 };
+use gravi_core::heap_verifier::{HeapVerifier, probe_allocate_usize};
 use gravi_core::spatial_grid::{rebuild_grid, SpatialGrid};
 use gravi_core::store::NativeStore;
 
@@ -277,11 +278,34 @@ fn ac8_no_allocation_hot_path_repeated_calls() {
     rebuild_grid(&grid, &store);
 
     let cfg = CollisionConfig::default();
+
+    // Hot path: 1000 llamadas repetidas sin asignaciones de heap.
+    let mut hv = HeapVerifier::new();
+    hv.begin_frame();
     for _ in 0..1000 {
         let _ = unsafe { resolve_collisions(&mut store, &grid, cfg) };
     }
+    let report = hv.end_frame();
+    assert_eq!(
+        report.delta_bytes,
+        0,
+        "resolve_collisions asignó heap: delta_bytes={}",
+        report.delta_bytes
+    );
+
     // Sin panic y sin corromper invariantes básicas.
     assert!(store.live_count >= 1);
+
+    // Control positivo: una asignación real debe ser detectada por el medidor.
+    let mut hv_ctrl = HeapVerifier::new();
+    hv_ctrl.begin_frame();
+    let _control = probe_allocate_usize();
+    let report_ctrl = hv_ctrl.end_frame();
+    assert!(
+        report_ctrl.delta_bytes > 0,
+        "control positivo no detectó asignación: delta_bytes={}",
+        report_ctrl.delta_bytes
+    );
 }
 
 /// `resolve_inelastic_collision`: conserva masa y momento, centro de masa,

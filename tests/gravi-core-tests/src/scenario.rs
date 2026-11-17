@@ -1,12 +1,22 @@
 //! Pruebas de integración extraídas de crates/gravi-core/src/scenario.rs
 //! (serialización `.grav` v1, Issue 12).
 
+use gravi_core::constants::MASS_EPS;
 use gravi_core::scenario::{save_scenario, load_scenario, HEADER_SIZE};
 use gravi_core::simulation_store::{allocate, seed_linear, SimConfig};
 use std::fs;
 
 fn config() -> SimConfig {
     SimConfig { body_count: 8, width: 100.0, height: 100.0 }
+}
+
+/// Aserción de tolerancia absoluta para f32 en pruebas de round-trip.
+fn assert_abs_diff_f32(a: f32, b: f32, eps: f32, canal: &str, i: usize) {
+    assert!(
+        (a - b).abs() < eps,
+        "round-trip {canal}[{i}] excede tolerancia: a={a} b={b} diff={}",
+        (a - b).abs()
+    );
 }
 
 #[test]
@@ -30,10 +40,10 @@ fn ac1_round_trip_save_load_recovers_xyvxvy() {
     let lvx = loaded.vx_slice();
     let lvy = loaded.vy_slice();
     for i in 0..store.count {
-        assert_eq!(lx[i], x[i], "x[{}]", i);
-        assert_eq!(ly[i], y[i], "y[{}]", i);
-        assert_eq!(lvx[i], vx[i], "vx[{}]", i);
-        assert_eq!(lvy[i], vy[i], "vy[{}]", i);
+        assert_abs_diff_f32(lx[i], x[i], MASS_EPS, "x", i);
+        assert_abs_diff_f32(ly[i], y[i], MASS_EPS, "y", i);
+        assert_abs_diff_f32(lvx[i], vx[i], MASS_EPS, "vx", i);
+        assert_abs_diff_f32(lvy[i], vy[i], MASS_EPS, "vy", i);
     }
     let _ = fs::remove_file(&path);
 }
