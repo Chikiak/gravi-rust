@@ -70,7 +70,7 @@ pub struct App {
     rl: RaylibHandle,
     thread: RaylibThread,
     store: NativeStore,
-    render_buffer: RenderBuffer,
+    pub render_buffer: RenderBuffer,
     quad_arena: QuadtreeArena,
     grid: SpatialGrid,
     dispatcher: ParallelForceDispatcher,
@@ -90,6 +90,7 @@ pub struct App {
     frame_count: u64,
     kt_ms: u64,
     accumulator: f32,
+    pub window_size: (i32, i32),
 }
 
 impl App {
@@ -166,6 +167,7 @@ impl App {
             frame_count: 0,
             kt_ms: 0,
             accumulator: 0.0,
+            window_size: (1920, 980),
         })
     }
 
@@ -186,8 +188,21 @@ impl App {
                 last_frame = Instant::now(); // no acumular tiempo pausado
             }
 
+            self.detect_resize();
             self.render();
             self.frame_count = self.frame_count.wrapping_add(1);
+        }
+    }
+
+    /// Detecta resize de ventana una vez por frame, antes del render.
+    /// Si el tamaño cambió, reasigna el RenderBuffer e invalida la textura
+    /// para que se re-cree perezosamente en `update_texture`.
+    fn detect_resize(&mut self) {
+        let w = self.rl.get_screen_width();
+        let h = self.rl.get_screen_height();
+        if (w, h) != self.window_size {
+            self.render_buffer.resize(w, h);
+            self.window_size = (w, h);
         }
     }
 

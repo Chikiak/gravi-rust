@@ -24,7 +24,7 @@ const PIXEL_BLANCO: u32 = 0xFFFF_FFFF;
 /// `Texture2D` asociada en GPU (creada perezosamente en `update_texture`).
 pub struct RenderBuffer {
     pub image: Image,
-    pub(crate) texture: Option<Texture2D>,
+    pub texture: Option<Texture2D>,
 }
 
 impl RenderBuffer {
@@ -50,6 +50,27 @@ impl RenderBuffer {
 
     pub fn height(&self) -> i32 {
         self.image.height()
+    }
+
+    /// Reasigna la `Image` a nuevas dimensiones e invalida la textura GPU
+    /// (`None`) para que se re-cree perezosamente en `update_texture`.
+    /// Early-return si las dimensiones ya son las pedidas (sin asignaciones).
+    pub fn resize(&mut self, width: i32, height: i32) {
+        if self.image.width() == width && self.image.height() == height {
+            return;
+        }
+        self.image = Image::gen_image_color(width, height, Color::BLACK);
+        // Los datos de `Image` provienen del allocador de raylib, alineados al
+        // menos a 8 bytes en Windows/x86_64: suficiente para indexarlos como
+        // `u32` (alineación 4) sin ningún padding.
+        unsafe {
+            assert_eq!(
+                self.image.data() as usize % 4,
+                0,
+                "Image data must be 4-byte aligned for u32 pixel access"
+            );
+        }
+        self.texture = None;
     }
 
     /// Devuelve los datos de `image` como `&mut [u32]` RGBA8888.
