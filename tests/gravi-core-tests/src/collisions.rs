@@ -311,7 +311,8 @@ fn ac9_inelastic_collision_full_contract() {
     store.live_count = 2;
 
     let gen_j_before = unsafe { *store.generation.add(1) };
-    unsafe { resolve_inelastic_collision(&mut store, 0, 1, 0.5); }
+    let Ok(()) = (unsafe { resolve_inelastic_collision(&mut store, 0, 1, 0.5) })
+        else { panic!("resolve_inelastic_collision falló inesperadamente en ac9") };
 
     unsafe {
         let new_m = 4.0f32;
@@ -358,7 +359,8 @@ fn ac10_inelastic_collision_zero_mass_no_nan() {
     }
     store.live_count = 2;
 
-    unsafe { resolve_inelastic_collision(&mut store, 0, 1, 0.5); }
+    let Ok(()) = (unsafe { resolve_inelastic_collision(&mut store, 0, 1, 0.5) })
+        else { panic!("resolve_inelastic_collision falló inesperadamente en ac10") };
 
     unsafe {
         assert!(!store.vx.add(0).read().is_nan(), "vx[0] no debe ser NaN");

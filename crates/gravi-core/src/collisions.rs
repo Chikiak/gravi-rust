@@ -11,7 +11,7 @@
 //! - `mass[slot] >= 0.0` como centinela de slot vivo (Issue 4 / Issue 9).
 //! Recompile-forzado: marcador de versión 2 (separación posicional siempre).
 
-use crate::entity_lifecycle::is_live;
+use crate::entity_lifecycle::{is_live, LifecycleError};
 use crate::spatial_grid::SpatialGrid;
 use crate::store::NativeStore;
 
@@ -150,7 +150,7 @@ pub unsafe fn resolve_inelastic_collision(
     i: usize,
     j: usize,
     radius_per_sqrt_mass: f32,
-) {
+) -> Result<(), LifecycleError> {
     unsafe {
         let mass = store.mass;
         let x = store.x;
@@ -186,7 +186,6 @@ pub unsafe fn resolve_inelastic_collision(
         // Absorbido marcado muerto: centinela masa = -1.0, generación++,
         // pila LIFO (free_list), live_count--.
         crate::entity_lifecycle::mark_dead(store, j as i32)
-            .expect("resolve_inelastic_collision: j debe estar vivo");
     }
 }
 
@@ -311,13 +310,15 @@ pub unsafe fn resolve_collisions(
                             // Fusión inelástica: conserva masa y momento,
                             // centro de masa, radio = sqrt(M) *
                             // radius_per_sqrt_mass, j marcado muerto.
-                            resolve_inelastic_collision(
+                            match resolve_inelastic_collision(
                                 store,
                                 i,
                                 j,
                                 cfg.radius_per_sqrt_mass,
-                            );
-                            collisions += 1;
+                            ) {
+                                Ok(()) => collisions += 1,
+                                Err(_) => {}
+                            }
                         } else {
                             // Colisión elástica impulse-based.
                             let impulse = -(1.0f32 + cfg.elastic_restitution)
@@ -350,4 +351,5 @@ pub unsafe fn resolve_collisions(
         collisions
     }
 }
+
 
