@@ -3,8 +3,6 @@
 //! Zero-allocation en el hot path: sin Vec/String/format!/closures en
 //! PhysicsStep ni en el loop de render.
 
-#![deny(warnings)]
-
 use gravi_core::collisions::{CollisionConfig, resolve_collisions};
 use gravi_core::constants::PhysicsConstants;
 use gravi_core::diagnostics::calculate_flops_per_frame;

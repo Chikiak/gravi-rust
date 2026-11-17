@@ -3,9 +3,9 @@ name = "gravi-ui"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 gravi-core = { path = "../gravi-core" }
-raylib = "5.0"
-
-[dev-dependencies]
 raylib = "5.0"
