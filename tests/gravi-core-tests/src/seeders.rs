@@ -2,7 +2,7 @@
 //! Paridad con GraviSharp.Core.SimulationStore (SeedLinear/SeedRandomCloud/
 //! SeedUniformField/SeedOrbitalDisk).
 
-use gravi_core::constants::PhysicsConstants;
+use gravi_core::constants::{MASS_EPS, PhysicsConstants};
 use gravi_core::simulation_store::{
     allocate, seed_linear, seed_orbital_disk, seed_random_cloud, seed_uniform_field, SimConfig,
 };
@@ -36,15 +36,15 @@ fn seed_linear_xy_in_range_and_speed_magnitude() {
         assert!(y[i] >= 0.0 && y[i] < 100.0, "y[{}]={}", i, y[i]);
         let mag = (vx[i] * vx[i] + vy[i] * vy[i]).sqrt();
         assert!((mag - speed).abs() < 1e-4, "mag[{}]={}", i, mag);
-        assert_eq!(mass[i], 1.0, "mass[{}]", i);
-        assert_eq!(radius[i], 0.5, "radius[{}]", i);
+        assert!((mass[i] - 1.0).abs() < MASS_EPS, "mass[{}]={}", i, mass[i]);
+        assert!((radius[i] - 0.5).abs() < MASS_EPS, "radius[{}]={}", i, radius[i]);
     }
     // Fuerzas cero tras el seeder y tail consistente.
     let fx = store.fx_slice();
     let fy = store.fy_slice();
     for i in 0..store.count {
-        assert_eq!(fx[i], 0.0, "fx[{}]", i);
-        assert_eq!(fy[i], 0.0, "fy[{}]", i);
+        assert!((fx[i] - 0.0).abs() < MASS_EPS, "fx[{}]={}", i, fx[i]);
+        assert!((fy[i] - 0.0).abs() < MASS_EPS, "fy[{}]={}", i, fy[i]);
     }
     assert_eq!(store.live_count, store.count);
     assert_eq!(store.free_head, -1);

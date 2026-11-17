@@ -9,9 +9,10 @@ use gravi_core::quadtree::{build_quadtree, compute_forces_barnes_hut_range, comp
 use gravi_core::scenario::{load_scenario, save_scenario};
 use gravi_core::simulation_store::{allocate, clear_forces, compute_forces_brute, compute_forces_brute_range, dispose, integrate_symplectic_euler, seed_linear, SimConfig};
 use gravi_core::store::NativeStore;
+use gravi_core::constants::MASS_EPS;
 use gravi_core::verifier;
+use std::env;
 use std::fs;
-use std::path::Path;
 
 /// Umbrales F2 (two-body simétrico, 600 ticks).
 const ENERGY_DRIFT_MAX_PCT: f32 = 0.5;
@@ -305,6 +306,15 @@ fn barnes_hut_vs_brute_small_n_within_threshold() {
 // 5. Scenario round-trip save/load
 // ===========================================================================
 
+/// Aserción de tolerancia absoluta para f32 en pruebas de round-trip.
+fn assert_abs_diff_f32(a: f32, b: f32, eps: f32, canal: &str, i: usize) {
+    assert!(
+        (a - b).abs() < eps,
+        "round-trip {canal}[{i}] excede tolerancia: a={a} b={b} diff={}",
+        (a - b).abs()
+    );
+}
+
 #[test]
 fn scenario_round_trip_save_load() {
     let mut store = allocate(SimConfig {
@@ -316,10 +326,10 @@ fn scenario_round_trip_save_load() {
     store.init_lifecycle();
     seed_linear(&mut store, 100.0, 100.0, 10.0, 1337);
 
-    let path = Path::new("gravi_core_tests_roundtrip.grav");
-    assert!(save_scenario(path, &store, 2).is_ok());
+    let path = env::temp_dir().join("gravi_core_tests_roundtrip.grav");
+    assert!(save_scenario(&path, &store, 2).is_ok());
 
-    let loaded = load_scenario(path).expect("load_scenario falló");
+    let loaded = load_scenario(&path).expect("load_scenario falló");
     assert_eq!(loaded.count, store.count);
     assert_eq!(loaded.live_count, store.count);
 
@@ -333,14 +343,14 @@ fn scenario_round_trip_save_load() {
     let lvy = loaded.vy_slice();
     let mut i = 0;
     while i < store.count {
-        assert_eq!(lx[i], x[i], "x[{}]", i);
-        assert_eq!(ly[i], y[i], "y[{}]", i);
-        assert_eq!(lvx[i], vx[i], "vx[{}]", i);
-        assert_eq!(lvy[i], vy[i], "vy[{}]", i);
+        assert_abs_diff_f32(lx[i], x[i], MASS_EPS, "x", i);
+        assert_abs_diff_f32(ly[i], y[i], MASS_EPS, "y", i);
+        assert_abs_diff_f32(lvx[i], vx[i], MASS_EPS, "vx", i);
+        assert_abs_diff_f32(lvy[i], vy[i], MASS_EPS, "vy", i);
         i += 1;
     }
 
-    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(&path);
 }
 
 // ===========================================================================

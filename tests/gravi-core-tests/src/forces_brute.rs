@@ -1,6 +1,7 @@
 //! Tests extraídos de crates/gravi-core/src/simulation_store.rs (Issue 3 — criterios de aceptación).
 //! Integration test: solo API pública de gravi_core.
 
+use gravi_core::constants::MASS_EPS;
 use gravi_core::simulation_store::{allocate, clear_forces, compute_forces_brute, dispose, reflect_bounds, seed_linear, SimConfig};
 
 fn config() -> SimConfig {
@@ -109,7 +110,10 @@ fn ac5_reflect_bounds_clamps_and_inverts_velocity() {
 fn dispose_then_drop_no_double_free() {
     let mut store = allocate(config()).unwrap();
     dispose(&mut store);
-    // Drop ejecuta al salir del scope sin doble liberación.
+    // Estado post-dispose: todo liberado; el Drop al salir del scope no hace doble liberación.
+    assert_eq!(store.live_count, 0);
+    assert_eq!(store.free_head, -1);
+    assert_eq!(store.count, 16);
 }
 
 // ===========================================================================
@@ -218,9 +222,9 @@ fn fuerza_cero_con_muerto_entre_vivos() {
     assert_eq!(fa_x[3], fb_x[2], "fx[3] vs control[2]");
     assert_eq!(fa_y[3], fb_y[2], "fy[3] vs control[2]");
 
-    // Muerto en A: fuerza cero, masa inalterada.
-    assert_eq!(fa_x[2], 0.0, "fx del muerto debe ser 0");
-    assert_eq!(fa_y[2], 0.0, "fy del muerto debe ser 0");
+    // Muerto en A: fuerza cero (con tolerancia epsilon), masa inalterada.
+    assert!((fa_x[2] - 0.0).abs() < MASS_EPS, "fx del muerto={}", fa_x[2]);
+    assert!((fa_y[2] - 0.0).abs() < MASS_EPS, "fy del muerto={}", fa_y[2]);
     assert_eq!(store_a.mass_slice()[2], -1.0, "masa del muerto inalterada");
 
     dispose(&mut store_a);

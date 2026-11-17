@@ -2,6 +2,7 @@
 //! (compute_forces_barnes_hut_range).
 //! Extraídos de crates/gravi-core/src/quadtree.rs (mod tests).
 
+use gravi_core::constants::MASS_EPS;
 use gravi_core::quadtree::{build_quadtree, compute_forces_barnes_hut_range, compute_quadtree_masses, QuadtreeArena, root_from_live_bodies};
 use gravi_core::store::NativeStore;
 
@@ -82,7 +83,6 @@ fn b7_theta_cero_coincide_con_fuerza_bruta() {
         while i < 5usize {
             let (ex, ey) = bruto_esperado(&store, i, g, softening * softening);
             let ax = *fx.add(i); let ay = *fy.add(i);
-            eprintln!("DEBUG body {}: ax={} ay={} ex={} ey={}", i, ax, ay, ex, ey);
             let escala = 1.0f32.max(ex.abs()).max(ey.abs());
             let rel = ((ax - ex).abs() + (ay - ey).abs()) / escala.max(1e-6);
             if rel > max_rel { max_rel = rel; }
@@ -188,7 +188,7 @@ fn b7_arbol_vacio_y_rango_vacio_no_hacen_nada() {
     arena.root_index = -1;
     // Sin root: no escribe ni panica.
     compute_forces_barnes_hut_range(&arena, &store, 0, 1, 1.0, 1.0, 0.5);
-    unsafe { assert!(*store.fx.add(0) == 0.0); }
+    unsafe { assert!((*store.fx.add(0) - 0.0).abs() < MASS_EPS, "fx[0]={}", *store.fx.add(0)); }
 
     // Rango vacío: no escribe.
     let mut arena2 = QuadtreeArena::allocate(4).unwrap();

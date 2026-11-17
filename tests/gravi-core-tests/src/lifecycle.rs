@@ -2,6 +2,7 @@
 //! Integration test: solo API pública de gravi_core.
 
 use gravi_core::entity_lifecycle::{allocate_entity, is_live, mark_dead};
+use gravi_core::heap_verifier::{HeapVerifier, probe_allocate_usize};
 use gravi_core::store::NativeStore;
 
 /// Crea un store con `count` slots todos vivos, inicializa ciclo de vida.
@@ -233,9 +234,10 @@ fn ac3_allocate_entity_appends_to_live_indices() {
 fn ac4_no_heap_allocation_in_hot_path() {
     // AC4: las funciones no usan Vec/String/Box/closures. Verificado por inspección de código;
     // el hot path solo usa punteros crudos y aritmética de enteros.
-    // Esta prueba es una salvaguarda: llama a las funciones en un bucle y confirma
-    // que no hay panic ni comportamiento inesperado.
+    // Salvaguarda con el medidor de heap real: marcar y reciclar en bucle no asignan.
     let mut store = make_store(100);
+    let mut hv = HeapVerifier::new();
+    hv.begin_frame();
 
     // Marcar la mitad como muertos.
     for s in 0..50 {
@@ -249,8 +251,26 @@ fn ac4_no_heap_allocation_in_hot_path() {
         let res = allocate_entity(&mut store, 1.0, 2.0, 3.0, 4.0, 5.0, 0.5);
         assert!(res.is_ok());
     }
+    let report = hv.end_frame();
+    assert_eq!(
+        report.delta_bytes,
+        0,
+        "hot path asignó heap: delta_bytes={}",
+        report.delta_bytes
+    );
     assert_eq!(store.live_count, 100);
     // Tras drenar la free list inicializada por init_lifecycle, free_head queda en 0
     // (autociclo del slot 0), no en -1.
     assert_eq!(store.free_head, 0);
+
+    // Control positivo: una asignación real debe ser detectada por el medidor.
+    let mut hv_ctrl = HeapVerifier::new();
+    hv_ctrl.begin_frame();
+    let _control = probe_allocate_usize();
+    let report_ctrl = hv_ctrl.end_frame();
+    assert!(
+        report_ctrl.delta_bytes > 0,
+        "control positivo no detectó asignación: delta_bytes={}",
+        report_ctrl.delta_bytes
+    );
 }
