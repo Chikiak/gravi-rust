@@ -11,6 +11,7 @@
 //! - `mass[slot] >= 0.0` como centinela de slot vivo (Issue 4 / Issue 9).
 //! Recompile-forzado: marcador de versión 2 (separación posicional siempre).
 
+use crate::constants::MASS_EPS;
 use crate::entity_lifecycle::{is_live, LifecycleError};
 use crate::spatial_grid::SpatialGrid;
 use crate::store::NativeStore;
@@ -101,8 +102,8 @@ pub unsafe fn resolve_elastic_collision(
             let mi = *mass.add(i);
             let mj = *mass.add(j);
             // Inversas precalculadas: evita división flotante en el hot path.
-            let inv_mi = if mi != 0.0f32 { 1.0f32 / mi } else { 0.0f32 };
-            let inv_mj = if mj != 0.0f32 { 1.0f32 / mj } else { 0.0f32 };
+            let inv_mi = if mi.abs() > MASS_EPS { 1.0f32 / mi } else { 0.0f32 };
+            let inv_mj = if mj.abs() > MASS_EPS { 1.0f32 / mj } else { 0.0f32 };
             let inv_sum = inv_mi + inv_mj;
 
             let impulse = -(1.0f32 + restitution) * v_rel_n / inv_sum;
@@ -163,7 +164,7 @@ pub unsafe fn resolve_inelastic_collision(
         let mj = *mass.add(j);
         let new_m = mi + mj;
         // Inversa precalculada: evita división flotante en el hot path.
-        let inv_new_m = if new_m != 0.0f32 { 1.0f32 / new_m } else { 0.0f32 };
+        let inv_new_m = if new_m.abs() > MASS_EPS { 1.0f32 / new_m } else { 0.0f32 };
 
         let xi = *x.add(i);
         let yi = *y.add(i);
@@ -246,7 +247,7 @@ pub unsafe fn resolve_collisions(
                 let yi = *y.add(i);
                 let ri = *radius.add(i);
                 let m_i = *mass.add(i);
-                let inv_mi = if m_i != 0.0f32 { 1.0f32 / m_i } else { 0.0f32 };
+                let inv_mi = if m_i.abs() > MASS_EPS { 1.0f32 / m_i } else { 0.0f32 };
                 let vx_i = *vx.add(i);
                 let vy_i = *vy.add(i);
 
@@ -299,7 +300,7 @@ pub unsafe fn resolve_collisions(
                         }
 
                         let m_j = *mass.add(j);
-                        let inv_mj = if m_j != 0.0f32 { 1.0f32 / m_j } else { 0.0f32 };
+                        let inv_mj = if m_j.abs() > MASS_EPS { 1.0f32 / m_j } else { 0.0f32 };
                         let inv_sum = inv_mi + inv_mj;
 
                         let v_rel_n_sq = v_rel_n * v_rel_n;
@@ -352,4 +353,48 @@ pub unsafe fn resolve_collisions(
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::constants::MASS_EPS;
+
+    /// Masa por debajo de `MASS_EPS` se trata como cero efectiva: la inversa
+    /// es 0.0, por tanto el cuerpo no recibe impulso y su velocidad no cambia.
+    #[test]
+    fn mass_below_epsilon_is_treated_as_zero() {
+        let mut store = NativeStore::new(2).expect("store creation failed");
+        store.init_lifecycle();
+
+        // Cuerpo 0: masa bajo epsilon (1e-8 < MASS_EPS = 1e-6, no nula exacta).
+        unsafe {
+            *store.mass.add(0) = 1e-8f32;
+            // Cuerpo 1: masa unitaria.
+            *store.mass.add(1) = 1.0f32;
+            // Posiciones superpuestas (0 < dist < r_sum).
+            *store.x.add(0) = 0.0f32;
+            *store.y.add(0) = 0.0f32;
+            *store.x.add(1) = 0.1f32;
+            *store.y.add(1) = 0.0f32;
+            // Velocidades de acercamiento (v_rel_n < 0).
+            *store.vx.add(0) = 1.0f32;
+            *store.vy.add(0) = 0.0f32;
+            *store.vx.add(1) = -1.0f32;
+            *store.vy.add(1) = 0.0f32;
+        }
+
+        assert!(1e-8f32.abs() < MASS_EPS, "fixture: masa del cuerpo 0 bajo epsilon");
+
+        let vx0_antes = unsafe { *store.vx.add(0) };
+        let vy0_antes = unsafe { *store.vy.add(0) };
+
+        unsafe { resolve_elastic_collision(&mut store, 0, 1, 1.0f32) };
+
+        let vx0_despues = unsafe { *store.vx.add(0) };
+        let vy0_despues = unsafe { *store.vy.add(0) };
+
+        assert_eq!(vx0_despues, vx0_antes, "masa < MASS_EPS: vx no debe cambiar");
+        assert_eq!(vy0_despues, vy0_antes, "masa < MASS_EPS: vy no debe cambiar");
+    }
+}
 

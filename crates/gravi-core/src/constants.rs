@@ -4,6 +4,11 @@
 /// Suavizado al cuadrado para evitar singularidades (8.0² = 64.0).
 pub const SOFTENING_SQ: f32 = 64.0f32;
 
+/// Umbral por debajo del cual una masa se trata como cero efectiva.
+/// Evita divisiones por masa (casi) nula en el hot path de colisiones.
+/// Reutilizable por pruebas de R2-05.
+pub const MASS_EPS: f32 = 1e-6f32;
+
 /// Constantes físicas por defecto del motor N-body.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PhysicsConstants {
