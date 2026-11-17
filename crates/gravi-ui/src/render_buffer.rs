@@ -124,6 +124,12 @@ impl RenderBuffer {
 
     /// Sube el buffer entero a la textura GPU en una sola llamada a
     /// `update_texture`, creando la textura perezosamente si aún no existe.
+    ///
+    /// Contrato de re-intento: ante `Err` (fallo de `load_texture_from_image`
+    /// o de subida de p\u00edxeles), el caller debe invalidar `texture`
+    /// (`None`); la siguiente llamada con `texture.is_none()` vuelve a llamar
+    /// a `load_texture_from_image`, por lo que un fallo transitorio no deja
+    /// la app sin textura de forma permanente. Firma sin cambios.
     pub fn update_texture(
         &mut self,
         rl: &mut RaylibHandle,
@@ -147,6 +153,31 @@ mod tests {
         let pixels = rb.pixels_mut();
         let ptr = pixels.as_ptr() as usize;
         assert_eq!(ptr % 4, 0, "dirección base de pixels_mut debe ser múltiplo de 4");
+    }
+
+    /// AC3: `pixels.fill(0)` deja todos los pixeles en negro.
+    /// `fill(0)` cero los 4 bytes de cada pixel (alpha incluida), equivalente
+    /// al bucle anterior `*p = 0`: negro transparente `0x00000000`.
+    /// No requiere ventana (`pixels_mut` es `pub(crate)`).
+    #[test]
+    fn render_buffer_limpieza_fill_0_deja_buffer_negro() {
+        let mut rb = RenderBuffer::new(4, 4);
+        rb.pixels_mut().fill(0);
+        let pixels = rb.pixels_mut();
+        assert!(
+            pixels.iter().all(|&p| p == 0),
+            "fill(0) debe poner todos los pixeles a 0x00000000"
+        );
+        for y in 0..4 {
+            for x in 0..4 {
+                let c = rb.image.get_color(x, y);
+                assert_eq!(
+                    (c.r, c.g, c.b, c.a),
+                    (0, 0, 0, 0),
+                    "pixel ({x}, {y}) debe ser negro (alpha incluida) tras fill(0)"
+                );
+            }
+        }
     }
 }
 

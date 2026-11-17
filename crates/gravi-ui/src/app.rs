@@ -453,9 +453,7 @@ impl App {
     fn render(&mut self) {
         // Limpia el buffer de píxeles a negro (frame a frame).
         let pixels = self.render_buffer.pixels_mut();
-        for p in pixels.iter_mut() {
-            *p = 0;
-        }
+        pixels.fill(0);
 
         self.render_buffer.draw_all(&self.store);
         self.render_buffer.draw_attractors(&self.attractors);
@@ -464,7 +462,10 @@ impl App {
         }
 
         // Sube textura antes de begin_drawing (ambos necesitan &mut self.rl).
-        let _ = self.render_buffer.update_texture(&mut self.rl, &self.thread);
+        // Ante Err se invalida la textura para re-intentarla el siguiente frame.
+        if let Err(_) = self.render_buffer.update_texture(&mut self.rl, &self.thread) {
+            self.render_buffer.texture = None;
+        }
 
         // HUD líneas (PhysicsHud, zero-allocation): se escriben antes de
         // begin_drawing, porque `d` toma prestado `self.rl` como mutable.
@@ -489,8 +490,8 @@ impl App {
             self.kt_ms,
         );
 
-        let s1 = unsafe { std::str::from_utf8_unchecked(&self.hud_line1[..n1]) };
-        let s2 = unsafe { std::str::from_utf8_unchecked(&self.hud_line2[..n2]) };
+        let s1 = std::str::from_utf8(&self.hud_line1[..n1]).unwrap_or("");
+        let s2 = std::str::from_utf8(&self.hud_line2[..n2]).unwrap_or("");
 
         let mut d = self.rl.begin_drawing(&self.thread);
         d.clear_background(Color::BLACK);
