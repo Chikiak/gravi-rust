@@ -97,9 +97,9 @@ impl ParallelForceDispatcher {
                 let mut my_epoch = 0u64;
                 loop {
                     // Esperar hasta que haya trabajo nuevo (epoch cambió) o apagado.
-                    let mut st = m.lock().unwrap();
+                    let mut st = m.lock().unwrap_or_else(|e| e.into_inner());
                     while st.epoch == my_epoch && !st.shutdown {
-                        st = c.wait(st).unwrap();
+                        st = c.wait(st).unwrap_or_else(|e| e.into_inner());
                     }
                     if st.shutdown {
                         break;
@@ -120,7 +120,7 @@ impl ParallelForceDispatcher {
                     }
 
                     // Marcar este worker como inactivo y notificar al dispatcher.
-                    let mut st = m.lock().unwrap();
+                    let mut st = m.lock().unwrap_or_else(|e| e.into_inner());
                     st.active -= 1;
                     if st.active == 0 {
                         c.notify_all();
@@ -163,15 +163,15 @@ impl ParallelForceDispatcher {
 
         let (m, c) = &*self.inner;
         {
-            let mut st = m.lock().unwrap();
+            let mut st = m.lock().unwrap_or_else(|e| e.into_inner());
             st.epoch = st.epoch.wrapping_add(1);
             st.active = self.n_threads;
             c.notify_all();
         }
         // Esperar a que todos los workers terminen el frame.
-        let mut st = m.lock().unwrap();
+        let mut st = m.lock().unwrap_or_else(|e| e.into_inner());
         while st.active > 0 {
-            st = c.wait(st).unwrap();
+            st = c.wait(st).unwrap_or_else(|e| e.into_inner());
         }
     }
 
@@ -179,7 +179,7 @@ impl ParallelForceDispatcher {
     pub fn shutdown(self) {
         let (m, c) = &*self.inner;
         {
-            let mut st = m.lock().unwrap();
+            let mut st = m.lock().unwrap_or_else(|e| e.into_inner());
             st.shutdown = true;
             st.epoch = st.epoch.wrapping_add(1);
             c.notify_all();
@@ -189,3 +189,4 @@ impl ParallelForceDispatcher {
         }
     }
 }
+

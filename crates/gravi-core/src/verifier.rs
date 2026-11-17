@@ -135,7 +135,10 @@ pub fn verify(preset: VerifierPreset) -> VerificationResult {
         width: 200.0,
         height: 200.0,
     };
-    let mut store = allocate(config).expect("verifier: allocate falló");
+    let mut store = match allocate(config) {
+        Ok(store) => store,
+        Err(_) => return failed_verification(preset, ticks),
+    };
     crate::store::NativeStore::init_lifecycle(&mut store);
 
     // Siembra two-body simétrico (cuerpos 0 y 1 activos; el resto en reposo).
@@ -145,7 +148,10 @@ pub fn verify(preset: VerifierPreset) -> VerificationResult {
     let c = PhysicsConstants::default();
 
     // Diagnóstico inicial.
-    let d0 = compute_diagnostics(&store).expect("verifier: diagnóstico inicial falló");
+    let d0 = match compute_diagnostics(&store) {
+        Ok(d0) => d0,
+        Err(_) => return failed_verification(preset, ticks),
+    };
 
     // Hot path: 0 allocations por tick (solo punteros crudos sobre memoria nativa).
     // Se mide el delta de heap por frame con HeapVerifier.
@@ -169,7 +175,10 @@ pub fn verify(preset: VerifierPreset) -> VerificationResult {
     }
 
     // Diagnóstico final.
-    let d1 = compute_diagnostics(&store).expect("verifier: diagnóstico final falló");
+    let d1 = match compute_diagnostics(&store) {
+        Ok(d1) => d1,
+        Err(_) => return failed_verification(preset, ticks),
+    };
 
     // Derivas.
     let e0 = d0.total_energy;
@@ -219,6 +228,28 @@ pub fn verify(preset: VerifierPreset) -> VerificationResult {
         passed,
     }
 }
+
+/// Centro de valor centinela usado cuando `allocate` o un diagnóstico fallan:
+/// `passed: false` y todos los campos numéricos en 0.
+fn failed_verification(preset: VerifierPreset, ticks: u64) -> VerificationResult {
+    VerificationResult {
+        preset,
+        ticks,
+        energy_initial: 0.0,
+        energy_final: 0.0,
+        energy_drift_pct: 0.0,
+        momentum_initial: (0.0, 0.0),
+        momentum_final: (0.0, 0.0),
+        momentum_drift_pct: 0.0,
+        com_initial: (0.0, 0.0),
+        com_final: (0.0, 0.0),
+        com_drift_px: 0.0,
+        max_heap_delta: 0,
+        passed: false,
+    }
+}
+
+
 
 
 
