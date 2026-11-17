@@ -37,8 +37,11 @@ impl PhysicsStep {
     }
 }
 
+/// Paso de tiempo por defecto (~60 FPS).
+pub const DEFAULT_DT_SEC: f32 = 0.016;
+
 impl Default for PhysicsStep {
     fn default() -> Self {
-        Self::create(0.016) // ~60 FPS
+        Self::create(DEFAULT_DT_SEC) // ~60 FPS
     }
 }

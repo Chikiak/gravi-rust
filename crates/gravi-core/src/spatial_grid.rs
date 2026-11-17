@@ -144,6 +144,9 @@ impl SpatialGrid {
         let gw = self.grid_width as usize;
         let bx = (bucket % gw) as i32;
         let by = (bucket / gw) as i32;
+        if neighbor_idx >= 9 {
+            return -1;
+        }
         let dx = [ -1i32, 0, 1, -1, 0, 1, -1, 0, 1 ][neighbor_idx];
         let dy = [ -1i32, -1, -1, 0, 0, 0, 1, 1, 1 ][neighbor_idx];
         self.get_cell(bx + dx, by + dy)
