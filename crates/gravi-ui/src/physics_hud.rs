@@ -70,6 +70,21 @@ pub fn write_u64(buf: &mut [u8], mut pos: usize, mut n: u64) -> usize {
     written
 }
 
+/// Tabla const de potencias de 10 (10^0 .. 10^9) como f32, bit-idéntica
+/// al bucle `scale = scale * 10.0` para decimals 0..=9.
+const fn pow10_table() -> [f32; 10] {
+    let mut out = [1.0f32; 10];
+    let mut i = 1;
+    while i < 10 {
+        out[i] = out[i - 1] * 10.0;
+        i += 1;
+    }
+    out
+}
+
+/// 10^0 .. 10^9 precalculadas en tiempo de compilación.
+const POW10_F32: [f32; 10] = pow10_table();
+
 /// f32 con dígitos fijos después del punto (sin `format!`).
 /// `decimals` cifra decimal forzada (ej. 1 -> "12.3"). Devuelve bytes escritos.
 pub fn write_f32_fixed(buf: &mut [u8], mut pos: usize, v: f32, decimals: u32) -> usize {
@@ -83,13 +98,8 @@ pub fn write_f32_fixed(buf: &mut [u8], mut pos: usize, v: f32, decimals: u32) ->
         written += 1;
     }
 
-    // Multiplicador 10^decimals (sin división flotante en el cálculo).
-    let mut scale: f32 = 1.0;
-    let mut i = 0;
-    while i < decimals {
-        scale = scale * 10.0;
-        i += 1;
-    }
+    // Escala precalculada (tabla const de potencias de 10, bit-idéntica al bucle original para decimals 0..=9). Fuera de rango → 1.0, sin pánico.
+    let scale = POW10_F32.get(decimals as usize).copied().unwrap_or(1.0);
     let scaled = (x * scale).round() as i64;
     let int_part = scaled / (10i64.pow(decimals));
     let frac_part = scaled % (10i64.pow(decimals));

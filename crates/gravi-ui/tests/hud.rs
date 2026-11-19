@@ -34,3 +34,19 @@ fn itoa_and_fixed() {
     let s = core::str::from_utf8(&bf[..n]).unwrap();
     assert_eq!(s, "3.14");
 }
+
+#[test]
+#[ignore = "medición de rendimiento: comparar TIMING antes/después de la tabla const"]
+fn timing_write_f32_fixed_100k() {
+    use std::hint::black_box;
+    use std::time::Instant;
+    let iters = 100_000;
+    let mut buf = [0u8; 16];
+    let start = Instant::now();
+    for _ in 0..iters {
+        let n = black_box(write_f32_fixed(&mut buf, 0, 3.1415f32, 2));
+        black_box(n);
+    }
+    let elapsed = start.elapsed();
+    println!("TIMING write_f32_fixed {} iters en {:?} ({} ns/call)", iters, elapsed, elapsed.as_nanos() / iters as u128);
+}
