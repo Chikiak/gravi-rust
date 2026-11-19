@@ -47,7 +47,7 @@ fn ac2_rebuild_grid_no_write_outside_bucket_head() {
 
     let mut grid = SpatialGrid::allocate(30, 16, 4).unwrap();
     grid.set_cell_size(64.0);
-    rebuild_grid(&grid, &store);
+    rebuild_grid(&mut grid, &store);
 
     // Cuerpo 3 en (-5,-5) clampeado a celda (0,0) -> bucket 0, prepende.
     // Cuerpo 0 también en (10,10) -> bucket 0. Insertado antes que 3.
@@ -80,7 +80,7 @@ fn ac3_dead_slots_skipped() {
 
     let mut grid = SpatialGrid::allocate(30, 16, 3).unwrap();
     grid.set_cell_size(64.0);
-    rebuild_grid(&grid, &store);
+    rebuild_grid(&mut grid, &store);
 
     let mut e = SpatialPairEnumerator::new(&grid, &store);
     let mut count = 0usize;
@@ -110,7 +110,7 @@ fn ac4_enumerator_emits_each_pair_once() {
 
     let mut grid = SpatialGrid::allocate(30, 16, 3).unwrap();
     grid.set_cell_size(64.0);
-    rebuild_grid(&grid, &store);
+    rebuild_grid(&mut grid, &store);
 
     let mut e = SpatialPairEnumerator::new(&grid, &store);
     let mut found_01 = false;
@@ -153,7 +153,7 @@ fn ac6_bodies_outside_window_clamp() {
 
     let mut grid = SpatialGrid::allocate(30, 16, 2).unwrap();
     grid.set_cell_size(64.0);
-    rebuild_grid(&grid, &store);
+    rebuild_grid(&mut grid, &store);
 
     // Ambos clampeados a celdas de borde, sin acceso fuera de bucket_head.
     unsafe {
@@ -172,4 +172,30 @@ fn ac6_bodies_outside_window_clamp() {
     }
     // Ambos en celdas de borde distintas (0,0) y (29,15) -> sin par.
     assert_eq!(count, 0);
+}
+
+#[ignore = "medición manual R3-01: timing rebuild_grid antes/después del cambio selectivo; ejecutar con -- --ignored --nocapture"]
+#[test]
+fn timing_rebuild_grid_5000_bodies() {
+    let mut store = NativeStore::new(5000).expect("store");
+    store.init_lifecycle();
+    for k in 0..5000usize {
+        store.x_slice()[k] = (k as f32) * 0.17;
+        store.y_slice()[k] = (k as f32) * 0.23;
+        store.mass_slice()[k] = 1.0;
+        let li = store.live_indices_slice();
+        li[k] = k as i32;
+    }
+    store.live_count = 5000;
+    let mut grid = SpatialGrid::allocate(500, 500, 5000).expect("grid");
+    grid.set_cell_size(64.0);
+    // warm-up
+    rebuild_grid(&mut grid, &store);
+    let start = std::time::Instant::now();
+    let frames = 300u32;
+    for _ in 0..frames {
+        rebuild_grid(&mut grid, &store);
+    }
+    let elapsed = start.elapsed();
+    println!("R3-01 ANTES bucket_count=250000 frames={} elapsed_ms={:.3} ms/frame={:.4}", frames, elapsed.as_millis(), elapsed.as_nanos() as f64 / frames as f64);
 }
