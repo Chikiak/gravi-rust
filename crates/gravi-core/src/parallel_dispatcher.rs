@@ -1,7 +1,7 @@
 //! Dispatcher de fuerza bruta paralelo (Onda 4).
 //!
-//! Reparte el rango `[start, end)` en bloques de 64 sobre un cursor
-//! `AtomicUsize` compartido; cada bloque se resuelve con
+//! Reparte el rango `[start, end)` en bloques cuyo paso se deriva de `n_threads`/carga
+//! del frame sobre un cursor `AtomicUsize` compartido; cada bloque se resuelve con
 //! `compute_forces_brute_range` sobre slots disjuntos, por lo que el resultado
 //! es bit-identico a la versión secuencial y no hay carreras de datos.
 //!
@@ -15,7 +15,7 @@ use std::thread;
 
 use crate::store::NativeStore;
 
-const BLOCK_SIZE: usize = 64;
+
 
 /// Puntero a `NativeStore` marcado `Send` manualmente.
 ///
@@ -39,6 +39,9 @@ impl StorePtr {
 struct Shared {
     /// Cursor de bloques compartido (índice de bloque actual).
     next_block: AtomicUsize,
+    /// Tamaño de paso del cursor de bloques para el frame en curso (siempre >= 1).
+    /// Se deriva por despacho de `n_threads` y la carga del frame; acotado a [1, n].
+    block_size: AtomicUsize,
     /// Límite superior (exclusivo) del rango de objetivos del frame actual.
     end: AtomicUsize,
     /// Puntero al store del frame actual (bits como usize).
@@ -76,6 +79,7 @@ impl ParallelForceDispatcher {
     pub fn new(n_threads: usize) -> Self {
         let shared = Arc::new(Shared {
             next_block: AtomicUsize::new(0),
+            block_size: AtomicUsize::new(1),
             end: AtomicUsize::new(0),
             store_bits: AtomicUsize::new(0),
             g_bits: AtomicU32::new(0),
@@ -112,11 +116,12 @@ impl ParallelForceDispatcher {
                     let store_ptr = StorePtr(shared.store_bits.load(Ordering::Acquire) as *mut u8);
                     let store = unsafe { store_ptr.as_ref() };
                     let end = shared.end.load(Ordering::Acquire);
-                    let mut bs = shared.next_block.fetch_add(BLOCK_SIZE, Ordering::Acquire);
+                    let block_size = shared.block_size.load(Ordering::Acquire);
+                    let mut bs = shared.next_block.fetch_add(block_size, Ordering::Acquire);
                     while bs < end {
-                        let be = (bs + BLOCK_SIZE).min(end);
+                        let be = (bs + block_size).min(end);
                         crate::simulation_store::compute_forces_brute_range(store, bs, be, end, g);
-                        bs = shared.next_block.fetch_add(BLOCK_SIZE, Ordering::Acquire);
+                        bs = shared.next_block.fetch_add(block_size, Ordering::Acquire);
                     }
 
                     // Marcar este worker como inactivo y notificar al dispatcher.
@@ -137,7 +142,8 @@ impl ParallelForceDispatcher {
     }
 
     /// Calcula fuerzas sobre `[start, end)` contra todos los cuerpos `0..end`
-    /// repartiendo bloques de 64 entre los workers del pool.
+    /// repartiendo bloques cuyo paso se deriva de `n_threads`/carga del frame entre
+    /// los workers del pool.
     pub fn compute_forces_parallel_range(
         &self,
         store: &NativeStore,
@@ -153,6 +159,12 @@ impl ParallelForceDispatcher {
             crate::simulation_store::compute_forces_brute_range(store, start, end, end, g);
             return;
         }
+        // Paso del cursor derivado de n_threads y carga del frame (>= 1, <= n).
+        // `n_threads >= 1` aquí; `clamp(1, n)` evita fetch_add(0) (bucle infinito).
+        let n = end - start;
+        let block_size = (n / (self.n_threads * 4)).clamp(1, n);
+        self.shared.block_size.store(block_size, Ordering::Release);
+
         // Publicar parámetros del frame (Release, sincronizado con la condvar).
         self.shared.next_block.store(start, Ordering::Release);
         self.shared.end.store(end, Ordering::Release);
