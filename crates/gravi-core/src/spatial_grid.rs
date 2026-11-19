@@ -41,6 +41,11 @@ pub struct SpatialGrid {
     pub grid_height: i32,
     pub bucket_count: i32,
     pub body_count_max: i32,
+    /// Buffer de buckets sucios del frame en curso (capacidad `bucket_count`).
+    /// Unmanaged: una asignación en `allocate`, liberación en `dispose`/`Drop`.
+    pub dirty_buckets: *mut i32,
+    /// Entradas válidas de `dirty_buckets` (rango 0..=bucket_count).
+    pub dirty_len: usize,
 }
 
 /// Errores del SpatialGrid.
@@ -85,6 +90,24 @@ impl SpatialGrid {
         let bucket_head = base.as_ptr() as *mut i32;
         let next = unsafe { base.as_ptr().add(head_bytes) as *mut i32 };
 
+        // Allocate dirty_buckets buffer (capacidad bucket_count, zeroed).
+        let dirty_layout = match Layout::array::<i32>(bucket_count) {
+            Ok(l) => l,
+            Err(_) => {
+                unsafe { dealloc(base.as_ptr(), layout); }
+                return Err(SpatialGridError::AllocationFailed);
+            }
+        };
+        let dirty_ptr = unsafe { alloc(dirty_layout) };
+        let dirty_buckets = match NonNull::new(dirty_ptr as *mut i32) {
+            Some(p) => p.as_ptr(),
+            None => {
+                unsafe { dealloc(base.as_ptr(), layout); }
+                return Err(SpatialGridError::AllocationFailed);
+            }
+        };
+        unsafe { std::ptr::write_bytes(dirty_buckets as *mut u8, 0, dirty_layout.size()); }
+
         Ok(Self {
             bucket_head,
             next,
@@ -94,6 +117,8 @@ impl SpatialGrid {
             grid_height,
             bucket_count: bucket_count as i32,
             body_count_max,
+            dirty_buckets,
+            dirty_len: 0,
         })
     }
 
@@ -113,10 +138,22 @@ impl SpatialGrid {
         unsafe {
             dealloc(grid.bucket_head as *mut u8, layout);
         }
+        // Liberar el buffer de sucios (alloc independiente).
+        if !grid.dirty_buckets.is_null() {
+            let dirty_layout = match Layout::array::<i32>(grid.bucket_count as usize) {
+                Ok(l) => l,
+                Err(_) => return,
+            };
+            unsafe {
+                dealloc(grid.dirty_buckets as *mut u8, dirty_layout);
+            }
+        }
         grid.bucket_head = core::ptr::null_mut();
         grid.next = core::ptr::null_mut();
         grid.bucket_count = 0;
         grid.body_count_max = 0;
+        grid.dirty_buckets = core::ptr::null_mut();
+        grid.dirty_len = 0;
     }
 
     /// Cabeza de la lista del bucket (cx, cy) o -1 si vacío/fuera de rango.
@@ -175,14 +212,17 @@ impl Drop for SpatialGrid {
 ///
 /// Zero-allocation: solo punteros crudos y bucles `while`. Nunca escribe
 /// fuera de `bucket_head`.
-pub fn rebuild_grid(grid: &SpatialGrid, store: &NativeStore) {
+pub fn rebuild_grid(grid: &mut SpatialGrid, store: &NativeStore) {
     unsafe {
-        let bucket_count = grid.bucket_count as usize;
-        let mut b: usize = 0;
-        while b < bucket_count {
-            *grid.bucket_head.add(b) = -1;
-            b += 1;
+        // Reset selectivo: solo buckets tocados en el frame anterior.
+        let dirty_len = grid.dirty_len;
+        let dirty_buckets = grid.dirty_buckets;
+        let mut k: usize = 0;
+        while k < dirty_len {
+            *grid.bucket_head.add(*dirty_buckets.add(k) as usize) = -1;
+            k += 1;
         }
+        grid.dirty_len = 0;
 
         let live_count = store.live_count;
         let x = store.x;
@@ -215,6 +255,11 @@ pub fn rebuild_grid(grid: &SpatialGrid, store: &NativeStore) {
 
             let bucket_idx = (cy as usize) * gw + (cx as usize);
             let head = *grid.bucket_head.add(bucket_idx);
+            // Primera ocupación del frame: el bucket pasa de -1 a vivo → es sucio.
+            if head == -1 {
+                *grid.dirty_buckets.add(grid.dirty_len) = bucket_idx as i32;
+                grid.dirty_len += 1;
+            }
             *grid.next.add(i) = head;
             *grid.bucket_head.add(bucket_idx) = i as i32;
 

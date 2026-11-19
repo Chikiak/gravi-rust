@@ -428,7 +428,7 @@ impl App {
         integrate_symplectic_euler(&mut self.store, dt, damping);
 
         if self.collisions_enabled {
-            gravi_core::spatial_grid::rebuild_grid(&self.grid, &self.store);
+            gravi_core::spatial_grid::rebuild_grid(&mut self.grid, &self.store);
             let cfg = CollisionConfig::default();
             unsafe {
                 resolve_collisions(&mut self.store, &self.grid, cfg);

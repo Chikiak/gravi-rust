@@ -264,6 +264,12 @@ pub unsafe fn resolve_collisions(
                     }
                     let nb_idx = (cy as usize) * grid_width + (cx as usize);
 
+                    // R3-01: bucket vacío (head < 0) -> no hay lista que recorrer.
+                    if *bucket_head.add(nb_idx) < 0 {
+                        ni += 1;
+                        continue;
+                    }
+
                     let mut j_node = *bucket_head.add(nb_idx);
                     while j_node >= 0 {
                         let j = j_node as usize;

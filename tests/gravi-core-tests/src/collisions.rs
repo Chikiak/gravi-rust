@@ -159,7 +159,7 @@ fn ac5_inelastic_fusion_conserves_mass_and_momentum() {
 
     let mut grid = SpatialGrid::allocate(4, 4, 2).unwrap();
     grid.set_cell_size(64.0);
-    rebuild_grid(&grid, &store);
+    rebuild_grid(&mut grid, &store);
 
     let cfg = CollisionConfig {
         elastic_restitution: 0.8,
@@ -201,7 +201,7 @@ fn ac6_resolve_collisions_detects_pair_on_grid() {
 
     let mut grid = SpatialGrid::allocate(4, 4, 2).unwrap();
     grid.set_cell_size(64.0);
-    rebuild_grid(&grid, &store);
+    rebuild_grid(&mut grid, &store);
 
     let cfg = CollisionConfig::default(); // e=0.8, umbral 0.25 -> elástico (v_rel²=4 > 0.25)
     let n = unsafe { resolve_collisions(&mut store, &grid, cfg) };
@@ -248,7 +248,7 @@ fn ac7_resolve_collisions_skips_dead_slots() {
 
     let mut grid = SpatialGrid::allocate(4, 4, 2).unwrap();
     grid.set_cell_size(64.0);
-    rebuild_grid(&grid, &store);
+    rebuild_grid(&mut grid, &store);
 
     let cfg = CollisionConfig::default();
     let n = unsafe { resolve_collisions(&mut store, &grid, cfg) };
@@ -275,7 +275,7 @@ fn ac8_no_allocation_hot_path_repeated_calls() {
 
     let mut grid = SpatialGrid::allocate(4, 4, 4).unwrap();
     grid.set_cell_size(64.0);
-    rebuild_grid(&grid, &store);
+    rebuild_grid(&mut grid, &store);
 
     let cfg = CollisionConfig::default();
 
