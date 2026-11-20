@@ -436,7 +436,7 @@ impl App {
     /// Ejecuta subpasos de física fijos (dt) mientras el acumulador lo permita.
     /// Devuelve el número de subpasos ejecutados en este frame.
     fn physics_substeps_for_frame(&mut self, frame_dt: f32) -> usize {
-        let n = fixed_timestep_substeps(&mut self.accumulator, self.physics_step.dt, frame_dt);
+        let n = fixed_timestep_substeps(&mut self.accumulator, self.physics_step.dt, frame_dt, 2);
         for _ in 0..n {
             self.update_physics();
         }
@@ -515,12 +515,22 @@ impl App {
 /// Devuelve cuántos subpasos se consumieron; el residuo queda en `accumulator`
 /// para el frame siguiente (no se descarta). Pura: sin asignaciones, sin raylib,
 /// sin división flotante en simulación (conteo entero).
-pub fn fixed_timestep_substeps(accumulator: &mut f32, dt: f32, delta: f32) -> usize {
+///
+/// Política de tope: `max_steps` es el número máximo de subpasos ejecutados en
+/// un frame. Cuando se alcanza, el bucle se detiene y el exceso del
+/// acumulador se arrastra al frame siguiente, salvo que supere el umbral de
+/// recorte (~0.25 s), en cuyo caso se recorta a ese umbral para evitar un
+/// desbocado sin perder tiempo simulado de forma descontrolada. No modifica
+/// `PhysicsStep.dt` ni la semántica de `dt` por subpaso.
+pub fn fixed_timestep_substeps(accumulator: &mut f32, dt: f32, delta: f32, max_steps: usize) -> usize {
     *accumulator += delta;
     let mut n = 0usize;
-    while *accumulator >= dt {
+    while *accumulator >= dt && n < max_steps {
         *accumulator -= dt;
         n += 1;
+    }
+    if *accumulator > 0.25 {
+        *accumulator = 0.25;
     }
     n
 }
