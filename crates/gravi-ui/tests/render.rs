@@ -58,3 +58,51 @@ fn imagen_es_rgba_con_tamanio_de_una_subida_a_textura() {
     let rb = RenderBuffer::new(7, 9);
     assert_eq!(rb.image.get_pixel_data_size() as usize, 7 * 9 * 4);
 }
+
+#[test]
+fn draw_all_descarta_negativos_no_pinta_columna_cero() {
+    let mut rb = RenderBuffer::new(4, 4);
+    let mut store = make_store(1);
+    store.x_slice()[0] = -5.0;
+    store.y_slice()[0] = 3.0;
+    store.live_count = 1;
+    rb.draw_all(&store);
+
+    assert_eq!(rb.image.get_color(0, 3), Color::BLACK);
+    for y in 0..4 {
+        for x in 0..4 {
+            assert_eq!(
+                rb.image.get_color(x, y),
+                Color::BLACK,
+                "pixel ({x}, {y}) debe quedar negro (negativo no pinta)"
+            );
+        }
+    }
+}
+
+#[test]
+fn draw_all_descarta_fuera_de_rango_derecha_abajo() {
+    let mut rb = RenderBuffer::new(4, 4);
+    let mut store = make_store(2);
+    store.x_slice()[0] = 9.0;
+    store.y_slice()[0] = 9.0;
+    store.x_slice()[1] = 3.0;
+    store.y_slice()[1] = 3.0;
+    store.live_count = 2;
+    rb.draw_all(&store);
+
+    assert_eq!(rb.image.get_color(3, 3), Color::WHITE);
+    assert_eq!(rb.image.get_color(0, 0), Color::BLACK);
+}
+
+#[test]
+fn draw_all_pinta_cuerpo_en_limite_cero() {
+    let mut rb = RenderBuffer::new(4, 4);
+    let mut store = make_store(1);
+    store.x_slice()[0] = 0.0;
+    store.y_slice()[0] = 0.0;
+    store.live_count = 1;
+    rb.draw_all(&store);
+
+    assert_eq!(rb.image.get_color(0, 0), Color::WHITE);
+}

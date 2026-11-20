@@ -92,8 +92,10 @@ impl RenderBuffer {
     /// Rasteriza los cuerpos vivos de `store` como píxeles blancos.
     ///
     /// Se recorren solo los `live_count` primeros índices de `live_indices`.
-    /// Cada coordenada se castea a `usize` antes de indexar y se valida con una
-    /// comprobación sin signo contra el tamaño del buffer.
+    /// Las coordenadas se validan antes del cast (`0 <= x < width`,
+    /// `0 <= y < height`, equivalente al check sin signo de C#), por lo que los
+    /// valores negativos nunca saturan a la columna/fila 0 y nada se pinta fuera
+    /// del buffer.
     pub fn draw_all(&mut self, store: &NativeStore) {
         let width = self.image.width() as usize;
         let height = self.image.height() as usize;
@@ -104,11 +106,14 @@ impl RenderBuffer {
         let ys = store.y_slice();
         for &idx in live {
             let i = idx as usize;
-            let ux = xs[i] as usize;
-            let uy = ys[i] as usize;
-            if ux < width && uy < height {
-                pixels[uy * width + ux] = PIXEL_BLANCO;
+            let x = xs[i];
+            let y = ys[i];
+            if x < 0.0 || y < 0.0 || x >= width as f32 || y >= height as f32 {
+                continue;
             }
+            let ux = x as usize;
+            let uy = y as usize;
+            pixels[uy * width + ux] = PIXEL_BLANCO;
         }
     }
 
