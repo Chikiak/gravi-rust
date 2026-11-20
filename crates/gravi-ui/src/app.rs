@@ -16,8 +16,7 @@ use gravi_core::spatial_grid::SpatialGrid;
 use gravi_core::static_attractor::{apply_attractor_forces, StaticAttractor};
 use gravi_core::store::NativeStore;
 use gravi_core::quadtree::{
-    build_quadtree, compute_forces_barnes_hut_range, compute_quadtree_masses, root_from_live_bodies,
-    QuadtreeArena,
+    build_quadtree, compute_quadtree_masses, root_from_live_bodies, QuadtreeArena,
 };
 use crate::physics_hud::{write_line1, write_line2};
 use crate::render_buffer::RenderBuffer;
@@ -396,7 +395,7 @@ impl App {
                 if half > 0.0 {
                     let _ = build_quadtree(&self.store, &mut self.quad_arena, cx, cy, half);
                     let _ = compute_quadtree_masses(&mut self.quad_arena, &self.store);
-                    compute_forces_barnes_hut_range(
+                    self.dispatcher.compute_forces_barnes_hut_parallel(
                         &self.quad_arena,
                         &self.store,
                         0,
