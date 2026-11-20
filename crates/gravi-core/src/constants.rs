@@ -18,6 +18,15 @@ pub const DEFAULT_DAMPING: f32 = 1.0;
 /// Umbral de apertura Barnes-Hut por defecto (theta).
 pub const DEFAULT_BARNES_HUT_THETA: f32 = 0.3;
 
+/// Semilado mínimo de una celda del quadtree (paridad C# MinCellSize).
+pub const MIN_CELL_SIZE: f32 = 2.0;
+/// Profundidad máxima del quadtree (paridad C# MaxQuadtreeDepth).
+pub const MAX_QUADTREE_DEPTH: i32 = 32;
+/// Semilado mínimo de la raíz del quadtree.
+pub const MIN_ROOT_HALF: f32 = 64.0;
+/// Semilado máximo de la raíz del quadtree.
+pub const MAX_ROOT_HALF: f32 = 4096.0;
+
 /// Constantes físicas por defecto del motor N-body.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PhysicsConstants {

@@ -16,7 +16,7 @@ use gravi_core::spatial_grid::SpatialGrid;
 use gravi_core::static_attractor::{apply_attractor_forces, StaticAttractor};
 use gravi_core::store::NativeStore;
 use gravi_core::quadtree::{
-    build_quadtree, compute_quadtree_masses, root_from_live_bodies, QuadtreeArena,
+    build_quadtree, compute_quadtree_masses, root_from_live_bodies, QuadtreeArena, QuadtreeError,
 };
 use crate::physics_hud::{write_line1, write_line2};
 use crate::render_buffer::RenderBuffer;
@@ -89,6 +89,7 @@ pub struct App {
     accumulator: f32,
     pub window_size: (i32, i32),
     pub bounce: bool,
+    quadtree_overflow_warned: bool,
 }
 
 impl App {
@@ -167,6 +168,7 @@ impl App {
             accumulator: 0.0,
             window_size: (1920, 980),
             bounce: true,
+            quadtree_overflow_warned: false,
         })
     }
 
@@ -393,17 +395,31 @@ impl App {
             ForceEngine::BarnesHut => {
                 let (cx, cy, half) = root_from_live_bodies(&self.store);
                 if half > 0.0 {
-                    let _ = build_quadtree(&self.store, &mut self.quad_arena, cx, cy, half);
-                    let _ = compute_quadtree_masses(&mut self.quad_arena, &self.store);
-                    self.dispatcher.compute_forces_barnes_hut_parallel(
-                        &self.quad_arena,
-                        &self.store,
-                        0,
-                        self.store.live_count,
-                        g,
-                        softening,
-                        PhysicsConstants::default().barnes_hut_theta,
-                    );
+                    match build_quadtree(&self.store, &mut self.quad_arena, cx, cy, half) {
+                        Ok(()) => {
+                            let _ = compute_quadtree_masses(&mut self.quad_arena, &self.store);
+                            self.dispatcher.compute_forces_barnes_hut_parallel(
+                                &self.quad_arena,
+                                &self.store,
+                                0,
+                                self.store.live_count,
+                                g,
+                                softening,
+                                PhysicsConstants::default().barnes_hut_theta,
+                            );
+                        }
+                        Err(QuadtreeError::Overflow) => {
+                            if !self.quadtree_overflow_warned {
+                                eprintln!(
+                                    "quadtree: arena overflow (guardas activadas, continuando con árbol parcial)"
+                                );
+                                self.quadtree_overflow_warned = true;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("quadtree: error inesperado {:?}", e);
+                        }
+                    }
                 }
             }
         }

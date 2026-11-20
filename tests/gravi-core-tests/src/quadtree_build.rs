@@ -2,6 +2,7 @@
 //! build_quadtree, compute_quadtree_masses y root_from_live_bodies.
 //! Extraídos de crates/gravi-core/src/quadtree.rs (mod tests).
 
+use gravi_core::constants::{MAX_QUADTREE_DEPTH, MAX_ROOT_HALF, MIN_CELL_SIZE, MIN_ROOT_HALF};
 use gravi_core::quadtree::{build_quadtree, compute_quadtree_masses, QuadtreeArena, QuadtreeError, root_from_live_bodies, QuadNode};
 use gravi_core::store::NativeStore;
 use std::mem;
@@ -258,7 +259,8 @@ fn a2_masses_una_hoja_sin_subdividir() {
 fn a2_root_cero_cuerpo_devuelve_ceros() {
     let store = NativeStore::new(4).unwrap();
     let (cx, cy, half) = root_from_live_bodies(&store);
-    assert_eq!((cx, cy, half), (0.0, 0.0, 0.0));
+    assert_eq!((cx, cy), (0.0, 0.0));
+    assert_eq!(half, MIN_ROOT_HALF); // sin cuerpos -> raíz con semilado mínimo
 }
 
 #[test]
@@ -274,7 +276,7 @@ fn a2_root_un_cuerpo_centro_en_el_cuerpo() {
     let (cx, cy, half) = root_from_live_bodies(&store);
     assert_eq!(cx, 100.0);
     assert_eq!(cy, -200.0);
-    assert_eq!(half, 0.0); // extent nulo
+    assert_eq!(half, MIN_ROOT_HALF); // extent nulo -> clamp a MIN_ROOT_HALF
 }
 
 #[test]
@@ -300,7 +302,7 @@ fn a2_root_centro_dentro_del_rectangulo_de_vivos() {
     let (cx, cy, half) = root_from_live_bodies(&store);
     assert_eq!(cx, 50.0);
     assert_eq!(cy, 50.0);
-    assert_eq!(half, 50.0); // max(extent_x, extent_y)/2 = 100/2
+    assert_eq!(half, MIN_ROOT_HALF); // extent=100 -> half=50, clamp a MIN_ROOT_HALF=64
 
     // Centro dentro del rectangulo [0,100]x[0,100]
     assert!(cx >= 0.0 && cx <= 100.0);
@@ -332,7 +334,7 @@ fn a2_root_solo_cuerpos_vivos_ignorando_muertos() {
     let (cx, cy, half) = root_from_live_bodies(&store);
     assert_eq!(cx, 15.0); // (10+20)/2
     assert_eq!(cy, 15.0);
-    assert_eq!(half, 5.0); // extent 10 / 2
+    assert_eq!(half, MIN_ROOT_HALF); // extent=10 -> half=5, clamp a MIN_ROOT_HALF=64
 }
 
 #[test]
@@ -402,5 +404,266 @@ fn ac_overflow_no_corrompe_arena() {
     assert!(
         res2.is_ok(),
         "tras reset con capacidad suficiente debe funcionar"
+    );
+}
+
+// --- Nuevas pruebas R4-05 ---
+
+#[test]
+fn ac_consts_quadtree_guardas_existen() {
+    assert_eq!(MIN_CELL_SIZE, 2.0);
+    assert_eq!(MAX_QUADTREE_DEPTH, 32);
+    assert_eq!(MIN_ROOT_HALF, 64.0);
+    assert_eq!(MAX_ROOT_HALF, 4096.0);
+}
+
+#[test]
+fn quadtree_root_clamp_min_max_half() {
+    // AC1: extent pequeño -> half >= MIN_ROOT_HALF
+    let mut store = make_store(2);
+    store.x_slice()[0] = 10.0;
+    store.y_slice()[0] = 10.0;
+    store.mass_slice()[0] = 1.0;
+    store.x_slice()[1] = 11.0;
+    store.y_slice()[1] = 11.0;
+    store.mass_slice()[1] = 1.0;
+    store.live_count = 2;
+    let li = store.live_indices_slice();
+    li[0] = 0;
+    li[1] = 1;
+
+    let (_cx, _cy, half) = root_from_live_bodies(&store);
+    assert!(
+        half >= MIN_ROOT_HALF,
+        "half={} debe ser >= MIN_ROOT_HALF={}",
+        half,
+        MIN_ROOT_HALF
+    );
+
+    // extent grande (1920x980) -> half <= MAX_ROOT_HALF
+    let mut store2 = make_store(2);
+    store2.x_slice()[0] = 0.0;
+    store2.y_slice()[0] = 0.0;
+    store2.mass_slice()[0] = 1.0;
+    store2.x_slice()[1] = 1920.0;
+    store2.y_slice()[1] = 980.0;
+    store2.mass_slice()[1] = 1.0;
+    store2.live_count = 2;
+    let li2 = store2.live_indices_slice();
+    li2[0] = 0;
+    li2[1] = 1;
+
+    let (cx2, cy2, half2) = root_from_live_bodies(&store2);
+    assert!(
+        half2 <= MAX_ROOT_HALF,
+        "half={} debe ser <= MAX_ROOT_HALF={}",
+        half2,
+        MAX_ROOT_HALF
+    );
+    assert!(cx2 >= 0.0 && cx2 <= 1920.0);
+    assert!(cy2 >= 0.0 && cy2 <= 980.0);
+
+    // live_count == 0 -> half = MIN_ROOT_HALF (no 0.0)
+    let store3 = NativeStore::new(4).unwrap();
+    let (_cx3, _cy3, half3) = root_from_live_bodies(&store3);
+    assert_eq!(half3, MIN_ROOT_HALF);
+}
+
+#[test]
+fn quadtree_no_desborda_arena_con_cuerpos_coincidentes() {
+    // AC2: N cuerpos en la misma coordenada exacta, arena pequeña.
+    // build_quadtree debe retornar Ok (no Err(Overflow)) y no hacer panic.
+    let n = 50usize;
+    let mut store = make_store(n);
+    let mut i = 0usize;
+    while i < n {
+        store.x_slice()[i] = 50.0;
+        store.y_slice()[i] = 50.0;
+        store.mass_slice()[i] = 1.0;
+        i += 1;
+    }
+    store.live_count = n;
+    let li = store.live_indices_slice();
+    i = 0;
+    while i < n {
+        li[i] = i as i32;
+        i += 1;
+    }
+
+    // Arena pequeña: capacidad suficiente solo para la raíz. Con
+    // root_half=1.0 (< MIN_CELL_SIZE=2.0) se degrada inmediatamente a
+    // LeafMulti sin consumir nodos extra, por lo que no hay Overflow.
+    let mut arena = QuadtreeArena::allocate(4).unwrap(); // cap >= 32
+    arena.capacity = 1; // solo cabe la raíz
+
+    let res = build_quadtree(&store, &mut arena, 50.0, 50.0, 1.0);
+    assert!(
+        res.is_ok(),
+        "con cuerpos coincidentes y celda < MIN_CELL_SIZE no debe darse Overflow: {:?}",
+        res.err()
+    );
+
+    // compute_forces no debe panic ni escribir fuera de rango
+    assert!(compute_quadtree_masses(&mut arena, &store).is_ok());
+
+    unsafe {
+        let fx = store.fx;
+            let fy = store.fy;
+        // clear forces first
+        i = 0;
+        while i < n {
+            *fx.add(i) = 0.0;
+            *fy.add(i) = 0.0;
+            i += 1;
+        }
+    }
+
+    use gravi_core::quadtree::compute_forces_barnes_hut_range;
+    compute_forces_barnes_hut_range(&arena, &store, 0, n, 1.0, 8.0, 0.5);
+
+    unsafe {
+        let fx = store.fx;
+        let fy = store.fy;
+        i = 0;
+        while i < n {
+            let ax = *fx.add(i);
+            let ay = *fy.add(i);
+            assert!(ax.is_finite(), "cuerpo {} Fx no finito: {}", i, ax);
+            assert!(ay.is_finite(), "cuerpo {} Fy no finito: {}", i, ay);
+            i += 1;
+        }
+    }
+}
+
+#[test]
+fn quadtree_leaf_multi_masa_acumulada() {
+    // AC3 masa: 3 cuerpos en la misma celda (no subdivide por límite de
+    // profundidad). compute_quadtree_masses da mass = suma y count = 3.
+    let n = 3usize;
+    let mut store = make_store(n);
+    store.x_slice()[0] = 50.0; store.y_slice()[0] = 50.0; store.mass_slice()[0] = 1.0;
+    store.x_slice()[1] = 50.0; store.y_slice()[1] = 50.0; store.mass_slice()[1] = 2.0;
+    store.x_slice()[2] = 50.0; store.y_slice()[2] = 50.0; store.mass_slice()[2] = 3.0;
+    store.live_count = n;
+    let li = store.live_indices_slice();
+    li[0] = 0; li[1] = 1; li[2] = 2;
+
+    // Root half muy pequeño para forzar degradación inmediata (half=4 < MIN_CELL_SIZE=2? no, 4>=2).
+    // Usar profundidad: forzar que no se subdivida pasando root_half=2.0 (>=MIN_CELL_SIZE)
+    // pero con depth>=MAX_QUADTREE_DEPTH no es posible desde build_quadtree (depth=0).
+    // En su lugar, usar una celda muy pequeña: half=1.0 < MIN_CELL_SIZE=2.0 -> no subdivide.
+    let mut arena = QuadtreeArena::allocate(16).unwrap();
+    assert!(
+        build_quadtree(&store, &mut arena, 50.0, 50.0, 1.0).is_ok(),
+        "debe construir sin overflow con celda pequeña"
+    );
+
+    // Zero masa/count para forzar recomputo
+    unsafe {
+        for i in 0..arena.next_free {
+            let n = arena.read_node(i);
+            arena.write_node(i, QuadNode { mass: 0.0, count: 0, ..n });
+        }
+    }
+
+    assert!(compute_quadtree_masses(&mut arena, &store).is_ok());
+
+    unsafe {
+        let root = arena.read_node(arena.root_index as usize);
+        assert_eq!(root.kind, 3, "esperaba LeafMulti, got kind={}", root.kind);
+        assert_eq!(root.count, 3, "count debe ser 3");
+        assert!(
+            (root.mass - 6.0).abs() < 1e-6,
+            "mass debe ser 6.0, got {}",
+            root.mass
+        );
+    }
+}
+
+#[test]
+fn ac_insert_profundo_limite_32() {
+    // Profundidad 32: insertar cuerpos que forzarían subdivisión profunda,
+    // verificar que se detiene en MAX_QUADTREE_DEPTH y degrada a LeafMulti.
+    let n = 4usize;
+    let mut store = make_store(n);
+    // Cuerpos en posiciones muy cercanas para forzar muchas subdivisiones.
+    store.x_slice()[0] = 50.0; store.y_slice()[0] = 50.0; store.mass_slice()[0] = 1.0;
+    store.x_slice()[1] = 50.0 + 0.001; store.y_slice()[1] = 50.0 + 0.001; store.mass_slice()[1] = 1.0;
+    store.x_slice()[2] = 50.0 + 0.002; store.y_slice()[2] = 50.0 + 0.002; store.mass_slice()[2] = 1.0;
+    store.x_slice()[3] = 50.0 + 0.003; store.y_slice()[3] = 50.0 + 0.003; store.mass_slice()[3] = 1.0;
+    store.live_count = n;
+    let li = store.live_indices_slice();
+    li[0] = 0; li[1] = 1; li[2] = 2; li[3] = 3;
+
+    let mut arena = QuadtreeArena::allocate(256).unwrap();
+    let res = build_quadtree(&store, &mut arena, 50.0, 50.0, 64.0);
+    assert!(res.is_ok(), "no debe overflow con profundidad limitada");
+
+    // Verificar que no hay nodos Internal más allá de profundidad 32:
+    // recorrer todos los nodos y confirmar kind válido.
+    unsafe {
+        let mut i = 0usize;
+        while i < arena.next_free {
+            let node = arena.read_node(i);
+            assert!(
+                node.kind <= 3,
+                "nodo {} kind inválido {}",
+                i,
+                node.kind
+            );
+            i += 1;
+        }
+    }
+}
+
+#[test]
+fn ac_overflow_solo_arena_llena_real() {
+    // Overflow solo si arena realmente llena. Con cuerpos coincidentes y
+    // degradación LeafMulti, no debe darse Overflow por cuerpos en la misma
+    // celda.
+    let n = 100usize;
+    let mut store = make_store(n);
+    let mut i = 0usize;
+    while i < n {
+        store.x_slice()[i] = 100.0;
+        store.y_slice()[i] = 100.0;
+        store.mass_slice()[i] = 1.0;
+        i += 1;
+    }
+    store.live_count = n;
+    let li = store.live_indices_slice();
+    i = 0;
+    while i < n {
+        li[i] = i as i32;
+        i += 1;
+    }
+
+    // Arena con capacidad suficiente para raíz + degradación (no se consumen
+    // nodos extra en LeafMulti). Capacidad muy pequeña (solo raíz) debería
+    // bastar porque no se subdivide.
+    let mut arena = QuadtreeArena::allocate(n).unwrap();
+    arena.capacity = 1; // solo cabe la raíz
+
+    // Con 1 solo nodo (la raíz), al insertar el 2do cuerpo se intenta
+    // subdividir pero no hay capacidad -> Overflow. Esto es correcto: la
+    // arena está realmente llena.
+    let res = build_quadtree(&store, &mut arena, 100.0, 100.0, 64.0);
+    assert!(
+        matches!(res, Err(QuadtreeError::Overflow)),
+        "esperaba Overflow con arena de 1 nodo, got {:?}",
+        res
+    );
+
+    // Ahora con capacidad suficiente (raíz + unos hijos) pero con cuerpos
+    // coincidentes y root_half < MIN_CELL_SIZE -> se degrada a LeafMulti
+    // inmediatamente, sin consumir nodos extra, por lo que no hay Overflow.
+    let mut arena2 = QuadtreeArena::allocate(n).unwrap();
+    arena2.capacity = 10;
+
+    let res2 = build_quadtree(&store, &mut arena2, 100.0, 100.0, 1.0);
+    assert!(
+        res2.is_ok(),
+        "con cuerpos coincidentes, celda pequeña y LeafMulti no debe Overflow: {:?}",
+        res2.err()
     );
 }

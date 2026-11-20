@@ -197,3 +197,69 @@ fn b7_arbol_vacio_y_rango_vacio_no_hacen_nada() {
     assert!(compute_quadtree_masses(&mut arena2, &store).is_ok());
     compute_forces_barnes_hut_range(&arena2, &store, 0, 0, 1.0, 1.0, 0.5);
 }
+
+#[test]
+fn quadtree_leaf_multi_fuerza_igual_bruto() {
+    // AC3 fuerza: 3 cuerpos en la misma celda (LeafMulti).
+    // compute_forces_barnes_hut_range aplica fuerza de los 3 cuerpos
+    // individualmente a un cuerpo externo, coincidiendo con brute force.
+    let n = 4usize;
+    let mut store = make_store(n);
+    // Cuerpos 0,1,2 en la misma posición (50,50); cuerpo 3 en (200,200) externo.
+    store.x_slice()[0] = 50.0; store.y_slice()[0] = 50.0; store.mass_slice()[0] = 1.0;
+    store.x_slice()[1] = 50.0; store.y_slice()[1] = 50.0; store.mass_slice()[1] = 2.0;
+    store.x_slice()[2] = 50.0; store.y_slice()[2] = 50.0; store.mass_slice()[2] = 3.0;
+    store.x_slice()[3] = 200.0; store.y_slice()[3] = 200.0; store.mass_slice()[3] = 5.0;
+    store.live_count = n;
+    let li = store.live_indices_slice();
+    li[0] = 0; li[1] = 1; li[2] = 2; li[3] = 3;
+
+    let mut arena = QuadtreeArena::allocate(64).unwrap();
+    // Celda pequeña (half=1.0 < MIN_CELL_SIZE=2.0) -> no subdivide -> LeafMulti.
+    assert!(
+        build_quadtree(&store, &mut arena, 50.0, 50.0, 1.0).is_ok(),
+        "debe construir con LeafMulti"
+    );
+    assert!(compute_quadtree_masses(&mut arena, &store).is_ok());
+
+    let g: f32 = 1.0;
+    let softening: f32 = 0.0;
+    let theta: f32 = 0.0; // theta=0 -> fuerza bruta exacta
+    compute_forces_barnes_hut_range(&arena, &store, 0, 4, g, softening, theta);
+
+    unsafe {
+        let fx = store.fx;
+        let fy = store.fy;
+        // Fuerza esperada sobre el cuerpo 3 por los cuerpos 0,1,2 (bruto).
+        let ix = *store.x.add(3);
+        let iy = *store.y.add(3);
+        let mut ex: f32 = 0.0;
+        let mut ey: f32 = 0.0;
+        let mut j = 0usize;
+        while j < 3usize {
+            let mj = *store.mass.add(j);
+            let dx = *store.x.add(j) - ix;
+            let dy = *store.y.add(j) - iy;
+            let mut dist2 = dx * dx + dy * dy;
+            if dist2 <= 0.0 {
+                dist2 = 1e-32f32;
+            }
+            let r2 = dist2.recip();
+            let inv_dist3 = r2 * r2.sqrt();
+            ex = ex + g * mj * inv_dist3 * dx;
+            ey = ey + g * mj * inv_dist3 * dy;
+            j += 1;
+        }
+        let escala = 1.0f32.max(ex.abs()).max(ey.abs());
+        let rel = ((*fx.add(3) - ex).abs() + (*fy.add(3) - ey).abs()) / escala.max(1e-6);
+        assert!(
+            rel < 1e-4,
+            "cuerpo 3 (externo) fuerza BH={},{} bruto={},{} rel={}",
+            *fx.add(3),
+            *fy.add(3),
+            ex,
+            ey,
+            rel
+        );
+    }
+}
