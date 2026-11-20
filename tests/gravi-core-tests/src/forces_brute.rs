@@ -107,6 +107,91 @@ fn ac5_reflect_bounds_clamps_and_inverts_velocity() {
 }
 
 #[test]
+fn reflect_bounds_no_toca_muertos() {
+    let mut store = allocate(config()).unwrap();
+    store.init_lifecycle();
+    {
+        let x = store.x_slice();
+        let y = store.y_slice();
+        let vx = store.vx_slice();
+        let vy = store.vy_slice();
+        let mass = store.mass_slice();
+        // slot 0 vivo: x=-10, vx=5, y=50, vy=0, mass=1
+        x[0] = -10.0;
+        vx[0] = 5.0;
+        y[0] = 50.0;
+        vy[0] = 0.0;
+        mass[0] = 1.0;
+        // slot 1 muerto: x=110, vx=-5, y=50, vy=0, mass=-1
+        x[1] = 110.0;
+        vx[1] = -5.0;
+        y[1] = 50.0;
+        vy[1] = 0.0;
+        mass[1] = -1.0;
+    }
+
+    reflect_bounds(&mut store, 100.0, 100.0);
+
+    let x = store.x_slice();
+    let y = store.y_slice();
+    let vx = store.vx_slice();
+    let vy = store.vy_slice();
+    let mass = store.mass_slice();
+    assert_eq!(x[0], 0.0, "x vivo clampeado a 0");
+    assert_eq!(vx[0], -5.0, "vx vivo invertido");
+    assert_eq!(y[0], 50.0, "y vivo inalterado");
+    assert_eq!(vy[0], 0.0, "vy vivo inalterado");
+    // slot muerto inalterado aunque esté fuera de los límites
+    assert_eq!(x[1], 110.0, "x muerto inalterado");
+    assert_eq!(vx[1], -5.0, "vx muerto inalterado");
+    assert_eq!(y[1], 50.0, "y muerto inalterado");
+    assert_eq!(vy[1], 0.0, "vy muerto inalterado");
+    assert_eq!(mass[1], -1.0, "masa muerto inalterada");
+}
+
+#[test]
+fn reflect_bounds_clampa_e_invierte() {
+    let mut store = allocate(config()).unwrap();
+    store.init_lifecycle();
+    {
+        let x = store.x_slice();
+        let y = store.y_slice();
+        let vx = store.vx_slice();
+        let vy = store.vy_slice();
+        let mass = store.mass_slice();
+        // cuerpo A: sale por izquierda y arriba
+        x[0] = -10.0;
+        vx[0] = 5.0;
+        y[0] = -20.0;
+        vy[0] = 8.0;
+        mass[0] = 1.0;
+        // cuerpo B: sale por derecha y abajo
+        x[1] = 110.0;
+        vx[1] = -5.0;
+        y[1] = 120.0;
+        vy[1] = -3.0;
+        mass[1] = 1.0;
+    }
+
+    reflect_bounds(&mut store, 100.0, 100.0);
+
+    let x = store.x_slice();
+    let y = store.y_slice();
+    let vx = store.vx_slice();
+    let vy = store.vy_slice();
+    // A: clamp a (0,0) e invierte velocidad
+    assert_eq!(x[0], 0.0, "A x clampeado");
+    assert_eq!(vx[0], -5.0, "A vx invertido");
+    assert_eq!(y[0], 0.0, "A y clampeada");
+    assert_eq!(vy[0], -8.0, "A vy invertida");
+    // B: clamp a (100,100) e invierte velocidad
+    assert_eq!(x[1], 100.0, "B x clampeado");
+    assert_eq!(vx[1], 5.0, "B vx invertido");
+    assert_eq!(y[1], 100.0, "B y clampeada");
+    assert_eq!(vy[1], 3.0, "B vy invertida");
+}
+
+#[test]
 fn dispose_then_drop_no_double_free() {
     let mut store = allocate(config()).unwrap();
     dispose(&mut store);

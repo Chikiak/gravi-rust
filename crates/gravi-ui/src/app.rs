@@ -10,7 +10,7 @@ use gravi_core::parallel_dispatcher::ParallelForceDispatcher;
 use gravi_core::scenario::{load_scenario, save_scenario};
 use gravi_core::simulation_store::{
     allocate, clear_forces, compute_forces_brute_range, integrate_symplectic_euler,
-    seed_random_cloud, seed_uniform_field, seed_orbital_disk, SimConfig,
+    reflect_bounds, seed_random_cloud, seed_uniform_field, seed_orbital_disk, SimConfig,
 };
 use gravi_core::spatial_grid::SpatialGrid;
 use gravi_core::static_attractor::{apply_attractor_forces, StaticAttractor};
@@ -89,6 +89,7 @@ pub struct App {
     kt_ms: u64,
     accumulator: f32,
     pub window_size: (i32, i32),
+    pub bounce: bool,
 }
 
 impl App {
@@ -166,6 +167,7 @@ impl App {
             kt_ms: 0,
             accumulator: 0.0,
             window_size: (1920, 980),
+            bounce: true,
         })
     }
 
@@ -262,7 +264,7 @@ impl App {
             self.collisions_enabled = !self.collisions_enabled;
         }
         if toggle_b {
-            self.apply_bounce();
+            self.bounce = !self.bounce;
         }
         if f5 {
             self.io.save_pending = true;
@@ -360,19 +362,6 @@ impl App {
         }
     }
 
-    /// Aplica rebote (bounce): invierte Vy de todos los cuerpos.
-    fn apply_bounce(&mut self) {
-        unsafe {
-            let vy = self.store.vy;
-            let count = self.store.count;
-            let mut i = 0usize;
-            while i < count {
-                *vy.add(i) = -*vy.add(i);
-                i += 1;
-            }
-        }
-    }
-
     /// Paso de física: clear_forces → fuerzas (brute o Barnes-Hut) → integrar → colisiones.
     fn update_physics(&mut self) {
         let g = self.active_g;
@@ -426,6 +415,14 @@ impl App {
         }
 
         integrate_symplectic_euler(&mut self.store, dt, damping);
+
+        if self.bounce {
+            reflect_bounds(
+                &mut self.store,
+                self.window_size.0 as f32,
+                self.window_size.1 as f32,
+            );
+        }
 
         if self.collisions_enabled {
             gravi_core::spatial_grid::rebuild_grid(&mut self.grid, &self.store);
