@@ -1,7 +1,12 @@
 //! Pruebas de integración extraídas de crates/gravi-core/src/parallel_dispatcher.rs
-//! (fuerza bruta paralelo, Issue 14 / Onda 4).
+//! (fuerza bruta paralelo, Issue 14 / Onda 4; Barnes-Hut paralelo, R4-04).
 
+use gravi_core::constants::PhysicsConstants;
 use gravi_core::parallel_dispatcher::ParallelForceDispatcher;
+use gravi_core::quadtree::{
+    build_quadtree, compute_forces_barnes_hut_range, compute_quadtree_masses, root_from_live_bodies,
+    QuadtreeArena,
+};
 use gravi_core::simulation_store::compute_forces_brute_range;
 use gravi_core::store::NativeStore;
 
@@ -15,6 +20,42 @@ fn make_store(n: usize) -> NativeStore {
         }
     }
     store
+}
+
+/// Store con `n` cuerpos vivos (lifecycle inicializado, masas y posiciones
+/// llenas). Todos los slots están vivos: `live_count == count`.
+fn make_store_bh(n: usize) -> NativeStore {
+    let mut store = NativeStore::new(n).expect("NativeStore::new falló");
+    store.init_lifecycle();
+    for i in 0..n {
+        unsafe {
+            *store.x.add(i) = (i as f32) * 0.7 - 50.0;
+            *store.y.add(i) = (i as f32) * 1.1 - 30.0;
+            *store.mass.add(i) = 1.0 + (i as f32) * 0.3;
+        }
+    }
+    store
+}
+
+/// Construye un store con `count` slots y `live` vivos en índices pares
+/// (0, 2, 4, ...), más el quadtree correspondiente. Devuelve (store, arena).
+fn bh_store_muros(count: usize, live: usize) -> (NativeStore, QuadtreeArena) {
+    let mut store = make_store_bh(count);
+    store.live_count = live;
+    unsafe {
+        for p in 0..live {
+            *store.live_indices.add(p) = (2 * p) as i32;
+        }
+        for i in live..count {
+            *store.mass.add(i) = 0.0;
+        }
+    }
+    let (cx, cy, half) = root_from_live_bodies(&store);
+    assert!(half > 0.0, "raiz del quadtree vacía con {} vivos", live);
+    let mut arena = QuadtreeArena::allocate(count).expect("arena");
+    let _ = build_quadtree(&store, &mut arena, cx, cy, half);
+    let _ = compute_quadtree_masses(&mut arena, &store);
+    (store, arena)
 }
 
 #[test]
@@ -39,9 +80,97 @@ fn ac_parallel_bit_identical_to_sequential() {
 }
 
 #[test]
-fn ac_shutdown_no_panic() {
-    let dispatcher = ParallelForceDispatcher::new(2);
+fn ac_barnes_hut_parallel_bit_identical_to_sequential() {
+    let n = 200;
+    let g = 1.0f32;
+    let softening = PhysicsConstants::default().softening;
+    let theta = PhysicsConstants::default().barnes_hut_theta;
+
+    let seq_store = make_store_bh(n);
+    let (cx, cy, half) = root_from_live_bodies(&seq_store);
+    assert!(half > 0.0);
+    let mut seq_arena = QuadtreeArena::allocate(n).expect("arena");
+    let _ = build_quadtree(&seq_store, &mut seq_arena, cx, cy, half);
+    let _ = compute_quadtree_masses(&mut seq_arena, &seq_store);
+    compute_forces_barnes_hut_range(
+        &seq_arena,
+        &seq_store,
+        0,
+        n,
+        g,
+        softening,
+        theta,
+    );
+    let seq_fx = unsafe { std::slice::from_raw_parts(seq_store.fx, n) }.to_vec();
+    let seq_fy = unsafe { std::slice::from_raw_parts(seq_store.fy, n) }.to_vec();
+
+    let par_store = make_store_bh(n);
+    let (cx, cy, half) = root_from_live_bodies(&par_store);
+    assert!(half > 0.0);
+    let mut par_arena = QuadtreeArena::allocate(n).expect("arena");
+    let _ = build_quadtree(&par_store, &mut par_arena, cx, cy, half);
+    let _ = compute_quadtree_masses(&mut par_arena, &par_store);
+    let dispatcher = ParallelForceDispatcher::new(4);
+    dispatcher.compute_forces_barnes_hut_parallel(
+        &par_arena,
+        &par_store,
+        0,
+        n,
+        g,
+        softening,
+        theta,
+    );
     dispatcher.shutdown();
+    let par_fx = unsafe { std::slice::from_raw_parts(par_store.fx, n) }.to_vec();
+    let par_fy = unsafe { std::slice::from_raw_parts(par_store.fy, n) }.to_vec();
+
+    assert_eq!(seq_fx, par_fx, "Fx no bit-identico (Barnes-Hut paralelo)");
+    assert_eq!(seq_fy, par_fy, "Fy no bit-identico (Barnes-Hut paralelo)");
+}
+
+#[test]
+fn ac_barnes_hut_parallel_salta_muros() {
+    let count = 200;
+    let live = 100;
+    let g = 1.0f32;
+    let softening = PhysicsConstants::default().softening;
+    let theta = PhysicsConstants::default().barnes_hut_theta;
+
+    let (seq_store, seq_arena) = bh_store_muros(count, live);
+    compute_forces_barnes_hut_range(&seq_arena, &seq_store, 0, live, g, softening, theta);
+    let seq_fx = unsafe { std::slice::from_raw_parts(seq_store.fx, count) }.to_vec();
+    let seq_fy = unsafe { std::slice::from_raw_parts(seq_store.fy, count) }.to_vec();
+
+    let (par_store, par_arena) = bh_store_muros(count, live);
+    let dispatcher = ParallelForceDispatcher::new(4);
+    dispatcher.compute_forces_barnes_hut_parallel(
+        &par_arena,
+        &par_store,
+        0,
+        live,
+        g,
+        softening,
+        theta,
+    );
+    dispatcher.shutdown();
+    let par_fx = unsafe { std::slice::from_raw_parts(par_store.fx, count) }.to_vec();
+    let par_fy = unsafe { std::slice::from_raw_parts(par_store.fy, count) }.to_vec();
+
+    // Muros entre vivos (slots impares): deben seguir a cero en ambos.
+    for i in 0..count {
+        if i % 2 == 1 {
+            assert_eq!(seq_fx[i], 0.0, "muro fx[{i}] no es cero (secuencial)");
+            assert_eq!(seq_fy[i], 0.0, "muro fy[{i}] no es cero (secuencial)");
+            assert_eq!(par_fx[i], 0.0, "muro fx[{i}] no es cero (paralelo)");
+            assert_eq!(par_fy[i], 0.0, "muro fy[{i}] no es cero (paralelo)");
+        }
+    }
+    // Vivos (índices pares): bit-identico entre secuencial y paralelo.
+    for p in 0..live {
+        let i = 2 * p;
+        assert_eq!(seq_fx[i], par_fx[i], "Fx vivo[{i}] no bit-identico");
+        assert_eq!(seq_fy[i], par_fy[i], "Fy vivo[{i}] no bit-identico");
+    }
 }
 
 #[test]

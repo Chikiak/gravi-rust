@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
+use crate::quadtree::QuadtreeArena;
 use crate::store::NativeStore;
 
 
@@ -48,6 +49,14 @@ struct Shared {
     store_bits: AtomicUsize,
     /// `g` del frame actual (bits como u32).
     g_bits: AtomicU32,
+    /// Puntero al arena del quadtree del frame actual (bits como usize).
+    arena_bits: AtomicUsize,
+    /// Suavizado del frame actual (bits como u32).
+    softening_bits: AtomicU32,
+    /// Umbral de apertura theta del frame actual (bits como u32).
+    theta_bits: AtomicU32,
+    /// Kernel del frame actual: 0 = fuerza bruta, 1 = Barnes-Hut.
+    kernel_bits: AtomicU32,
 }
 
 /// Estado compartido entre el dispatcher y los workers (sincronizado por
@@ -83,6 +92,10 @@ impl ParallelForceDispatcher {
             end: AtomicUsize::new(0),
             store_bits: AtomicUsize::new(0),
             g_bits: AtomicU32::new(0),
+            arena_bits: AtomicUsize::new(0),
+            softening_bits: AtomicU32::new(0),
+            theta_bits: AtomicU32::new(0),
+            kernel_bits: AtomicU32::new(0),
         });
         let inner = Arc::new((
             Mutex::new(State {
@@ -117,10 +130,24 @@ impl ParallelForceDispatcher {
                     let store = unsafe { store_ptr.as_ref() };
                     let end = shared.end.load(Ordering::Acquire);
                     let block_size = shared.block_size.load(Ordering::Acquire);
+                    let kernel = shared.kernel_bits.load(Ordering::Acquire);
+                    let arena_ptr = shared.arena_bits.load(Ordering::Acquire) as *const QuadtreeArena;
+                    let softening = f32::from_bits(shared.softening_bits.load(Ordering::Acquire));
+                    let theta = f32::from_bits(shared.theta_bits.load(Ordering::Acquire));
                     let mut bs = shared.next_block.fetch_add(block_size, Ordering::Acquire);
                     while bs < end {
                         let be = (bs + block_size).min(end);
-                        crate::simulation_store::compute_forces_brute_range(store, bs, be, end, g);
+                        if kernel == 1 {
+                            // Barnes-Hut: traversal paralelo sobre el arena compartido.
+                            // kernel_bits==1 se publica tras arena_bits (Release en el
+                            // despachador), por lo que este Acquire ve el arena válido.
+                            let arena = unsafe { &*arena_ptr };
+                            crate::quadtree::compute_forces_barnes_hut_range(
+                                arena, store, bs, be, g, softening, theta,
+                            );
+                        } else {
+                            crate::simulation_store::compute_forces_brute_range(store, bs, be, end, g);
+                        }
                         bs = shared.next_block.fetch_add(block_size, Ordering::Acquire);
                     }
 
@@ -172,6 +199,65 @@ impl ParallelForceDispatcher {
             .store_bits
             .store(store as *const NativeStore as *mut u8 as usize, Ordering::Release);
         self.shared.g_bits.store(g.to_bits(), Ordering::Release);
+
+        let (m, c) = &*self.inner;
+        {
+            let mut st = m.lock().unwrap_or_else(|e| e.into_inner());
+            st.epoch = st.epoch.wrapping_add(1);
+            st.active = self.n_threads;
+            c.notify_all();
+        }
+        // Esperar a que todos los workers terminen el frame.
+        let mut st = m.lock().unwrap_or_else(|e| e.into_inner());
+        while st.active > 0 {
+            st = c.wait(st).unwrap_or_else(|e| e.into_inner());
+        }
+    }
+
+    /// Calcula fuerzas Barnes-Hut sobre `[start, end)` contra el quadtree ya
+    /// construido (`arena` con masas en `node.mass`), repartiendo bloques entre
+    /// los workers del pool. Bit-identico a `compute_forces_barnes_hut_range`
+    /// secuencial porque cada cuerpo acumula su fuerza de forma independiente y
+    /// en el mismo orden de traversal.
+    pub fn compute_forces_barnes_hut_parallel(
+        &self,
+        arena: &QuadtreeArena,
+        store: &NativeStore,
+        start: usize,
+        end: usize,
+        g: f32,
+        softening: f32,
+        theta: f32,
+    ) {
+        if end <= start {
+            return;
+        }
+        // Sin workers: ejecutar de forma secuencial en el hilo llamante.
+        if self.n_threads == 0 {
+            crate::quadtree::compute_forces_barnes_hut_range(arena, store, start, end, g, softening, theta);
+            return;
+        }
+        // Paso del cursor derivado de n_threads y carga del frame (>= 1, <= n).
+        // `n_threads >= 1` aquí; `clamp(1, n)` evita fetch_add(0) (bucle infinito).
+        let n = end - start;
+        let block_size = (n / (self.n_threads * 4)).clamp(1, n);
+        self.shared.block_size.store(block_size, Ordering::Release);
+
+        // Publicar parámetros del frame (Release). `kernel_bits` se publica
+        // último para que un worker que observe kernel==1 vea ya arena_bits,
+        // softening_bits y theta_bits (sincronizado por la condvar/epoch).
+        self.shared.next_block.store(start, Ordering::Release);
+        self.shared.end.store(end, Ordering::Release);
+        self.shared
+            .store_bits
+            .store(store as *const NativeStore as *mut u8 as usize, Ordering::Release);
+        self.shared
+            .arena_bits
+            .store(arena as *const QuadtreeArena as *mut u8 as usize, Ordering::Release);
+        self.shared.g_bits.store(g.to_bits(), Ordering::Release);
+        self.shared.softening_bits.store(softening.to_bits(), Ordering::Release);
+        self.shared.theta_bits.store(theta.to_bits(), Ordering::Release);
+        self.shared.kernel_bits.store(1, Ordering::Release);
 
         let (m, c) = &*self.inner;
         {
