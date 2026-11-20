@@ -250,8 +250,12 @@ pub fn reflect_bounds(store: &mut NativeStore, width: f32, height: f32) {
     let y = store.y_slice();
     let vx = store.vx_slice();
     let vy = store.vy_slice();
+    let mass = store.mass_slice();
 
     for i in 0..store.count {
+        if mass[i] < 0.0 {
+            continue;
+        }
         if x[i] < 0.0 {
             x[i] = 0.0;
             vx[i] = -vx[i];
