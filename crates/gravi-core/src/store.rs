@@ -22,9 +22,11 @@ fn dangling_i32_slice() -> *mut [i32] {
 ///
 /// Cada canal (X, Y, Vx, Vy, Fx, Fy, Mass, Radius) es un bloque independiente
 /// alineado a 64 B; los canales de índice (Generation, FreeList, LiveIndices,
-/// LivePos) son bloques de i32. `count` es la capacidad fija; `live_count` el
-/// número de cuerpos vivos. `free_head` es la cabeza de la pila LIFO de slots
-/// libres (-1 = vacía). `base_address` apunta al inicio del bloque consolidado.
+/// LivePos, BodyNext) son bloques de i32. `count` es la capacidad fija;
+/// `live_count` el número de cuerpos vivos. `free_head` es la cabeza de la
+/// pila LIFO de slots libres (-1 = vacía). `base_address` apunta al inicio del
+/// bloque consolidado. `BodyNext` es la cadena cuerpo-a-cuerpo de las hojas
+/// LeafMulti del quadtree (vive en el store, no en el arena).
 #[repr(C)]
 pub struct NativeStore {
     pub base_address: *mut u8,
@@ -40,6 +42,7 @@ pub struct NativeStore {
     pub free_list: *mut i32,
     pub live_indices: *mut i32,
     pub live_pos: *mut i32,
+    pub body_next: *mut i32,
     pub count: usize,
     pub live_count: usize,
     pub free_head: i32,
@@ -67,6 +70,7 @@ pub struct NativeStore {
     free_list_cache: *mut [i32],
     live_indices_cache: *mut [i32],
     live_pos_cache: *mut [i32],
+    body_next_cache: *mut [i32],
 }
 
 impl NativeStore {
@@ -78,7 +82,7 @@ impl NativeStore {
         }
         let size = count * std::mem::size_of::<f32>();
         let gen_size = count * std::mem::size_of::<i32>();
-        let total_bytes = size * 8 + gen_size * 4;
+        let total_bytes = size * 8 + gen_size * 5;
         let base = unsafe { aligned_alloc(total_bytes, 64) }
             .ok_or_else(|| "allocation failed: out of memory".to_string())?;
         let base_ptr = base.as_ptr() as *mut u8;
@@ -101,6 +105,9 @@ impl NativeStore {
             base_ptr.add(size * 8 + gen_size * 2) as *mut i32
         };
         let live_pos_ptr = unsafe { base_ptr.add(size * 8 + gen_size * 3) as *mut i32 };
+        let body_next_ptr = unsafe {
+            base_ptr.add(size * 8 + gen_size * 4) as *mut i32
+        };
 
         Ok(Self {
             base_address: base_ptr,
@@ -116,6 +123,7 @@ impl NativeStore {
             free_list: free_list_ptr,
             live_indices: live_indices_ptr,
             live_pos: live_pos_ptr,
+            body_next: body_next_ptr,
             count,
             live_count: count,
             free_head: -1,
@@ -139,6 +147,7 @@ impl NativeStore {
                 live_indices_ptr, count,
             ),
             live_pos_cache: std::ptr::slice_from_raw_parts_mut(live_pos_ptr, count),
+            body_next_cache: std::ptr::slice_from_raw_parts_mut(body_next_ptr, count),
         })
     }
 
@@ -158,6 +167,7 @@ impl NativeStore {
                 *self.free_list.add(i) = if i + 1 < count { (i + 1) as i32 } else { -1 };
                 *self.live_indices.add(i) = i as i32;
                 *self.live_pos.add(i) = i as i32;
+                *self.body_next.add(i) = -1;
             }
         }
         self.free_head = 0;
@@ -294,7 +304,7 @@ impl Drop for NativeStore {
         if self.base_address.is_null() {
             return;
         }
-        let total_bytes = self.channel_size * 8 + self.gen_channel_size * 4;
+        let total_bytes = self.channel_size * 8 + self.gen_channel_size * 5;
         unsafe {
             aligned_free(
                 NonNull::new(self.base_address as *mut u8).unwrap(),
@@ -315,6 +325,7 @@ impl Drop for NativeStore {
         self.free_list = std::ptr::null_mut();
         self.live_indices = std::ptr::null_mut();
         self.live_pos = std::ptr::null_mut();
+        self.body_next = std::ptr::null_mut();
         self.count = 0;
         self.slice_count = 0;
         // Invalidar las cachés: los punteros base ya no son válidos.
@@ -330,6 +341,7 @@ impl Drop for NativeStore {
         self.free_list_cache = dangling_i32_slice();
         self.live_indices_cache = dangling_i32_slice();
         self.live_pos_cache = dangling_i32_slice();
+        self.body_next_cache = dangling_i32_slice();
         self.live_count = 0;
         self.free_head = -1;
         self.byte_alignment = 0;
