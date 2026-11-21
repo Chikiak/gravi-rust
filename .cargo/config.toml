@@ -1,0 +1,7 @@
+# .cargo/config.toml — Build nativo opcional (Issue R4-07).
+# target-cpu=native aprovecha instrucciones del CPU host (AVX2/AVX-512)
+# para kernels SIMD de gravi-core (std::simd::f32x8).
+# Fallback si la CI no soporta `native` en la CPU de compilación:
+#   [build] rustflags = ["-C", "target-cpu=x86-64-v3"]
+[build]
+rustflags = ["-C", "target-cpu=native"]
