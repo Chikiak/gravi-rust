@@ -417,3 +417,205 @@ fn leafbucket_arena_no_desborda_con_cascada_coincidentes() {
         }
     }
 }
+
+#[test]
+fn leafmulti_live_indices_no_consecutivos_masa_count() {
+    // A1: live_indices es una permutación NO identidad (slots no consecutivos),
+    // root LeafMulti con count y masa correctos, cadena body_next bien enlazada.
+    let mut store = make_store(4);
+    store.x_slice()[0] = 50.0;
+    store.y_slice()[0] = 50.0;
+    store.mass_slice()[0] = 1.0;
+    store.x_slice()[1] = 50.0;
+    store.y_slice()[1] = 50.0;
+    store.mass_slice()[1] = 2.0;
+    store.x_slice()[2] = 50.0;
+    store.y_slice()[2] = 50.0;
+    store.mass_slice()[2] = 3.0;
+    store.x_slice()[3] = 200.0;
+    store.y_slice()[3] = 200.0;
+    store.mass_slice()[3] = 5.0;
+    store.live_count = 4;
+    let li = store.live_indices_slice();
+    li[0] = 2;
+    li[1] = 0;
+    li[2] = 1;
+    li[3] = 3;
+
+    let mut arena = QuadtreeArena::allocate(64).unwrap();
+    assert!(
+        build_quadtree(&store, &mut arena, 50.0, 50.0, 1.0).is_ok(),
+        "build no debe fallar con mitad menor a MIN_CELL_SIZE"
+    );
+    assert!(compute_quadtree_masses(&mut arena, &store).is_ok());
+
+    let root = unsafe { arena.read_node(arena.root_index as usize) };
+    assert_eq!(root.kind, 3, "root debe ser LeafMulti (kind=3)");
+    assert_eq!(root.count, 4, "root.count debe ser 4 cuerpos");
+    assert!(
+        (root.mass - 11.0).abs() < 1e-6,
+        "root.mass debe ser 11.0 (1+2+3+5), fue {}",
+        root.mass
+    );
+    // Cadena vía puntero crudo: 2 -> 0 -> 1 -> 3 -> -1
+    unsafe {
+        assert_eq!(*store.body_next.add(2), 0, "body_next[2] debe ser 0");
+        assert_eq!(*store.body_next.add(0), 1, "body_next[0] debe ser 1");
+        assert_eq!(*store.body_next.add(1), 3, "body_next[1] debe ser 3");
+        assert_eq!(*store.body_next.add(3), -1, "body_next[3] debe ser -1 (fin)");
+    }
+}
+
+#[test]
+fn leafmulti_live_indices_no_consecutivos_fuerza_igual_bruto() {
+    // A2: misma permutación; fuerza BH (theta=0) == fuerza bruta para cada cuerpo vivo.
+    let mut store = make_store(4);
+    store.x_slice()[0] = 50.0;
+    store.y_slice()[0] = 50.0;
+    store.mass_slice()[0] = 1.0;
+    store.x_slice()[1] = 50.0;
+    store.y_slice()[1] = 50.0;
+    store.mass_slice()[1] = 2.0;
+    store.x_slice()[2] = 50.0;
+    store.y_slice()[2] = 50.0;
+    store.mass_slice()[2] = 3.0;
+    store.x_slice()[3] = 200.0;
+    store.y_slice()[3] = 200.0;
+    store.mass_slice()[3] = 5.0;
+    store.live_count = 4;
+    let li = store.live_indices_slice();
+    li[0] = 2;
+    li[1] = 0;
+    li[2] = 1;
+    li[3] = 3;
+
+    let mut arena = QuadtreeArena::allocate(64).unwrap();
+    assert!(
+        build_quadtree(&store, &mut arena, 50.0, 50.0, 1.0).is_ok(),
+        "build no debe fallar"
+    );
+    assert!(compute_quadtree_masses(&mut arena, &store).is_ok());
+
+    // g=1500.0 (DEFAULT_G de constants.rs): el suelo escala=1.0 convierte
+    // `rel` en error absoluto, así que con g pequeño el error del bug de
+    // membresía (~5e-5) quedaba bajo el umbral 1e-4 y el test pasaba también
+    // con el bug. Con g=1500 el cuerpo 3 recibe del clúster masa 6 (correcto)
+    // vs masa 3 (bug de rango): rel ≈ 7e-2 >> 1e-4. theta=0 mantiene la
+    // comparación exacta contra bruto con el mismo g y soft2.
+    let g: f32 = 1500.0;
+    // softening=1.0 evita la singularidad: dx=dy=0 -> dist2 = 1, fuerzas
+    // finitas, así que la comparación rel<1e-4 es real para los 4 cuerpos.
+    let softening: f32 = 1.0;
+    let theta: f32 = 0.0;
+    compute_forces_barnes_hut_range(&arena, &store, 0, 4, g, softening, theta);
+
+    unsafe {
+        let fx = store.fx;
+        let fy = store.fy;
+        let mut i = 0usize;
+        while i < 4usize {
+            let (ex, ey) = bruto_esperado(&store, i, g, softening * softening);
+            let ax = *fx.add(i);
+            let ay = *fy.add(i);
+            // La rama is_nan se mantiene como defensa y documentación
+            // del cálculo: con softening > 0 y fuerzas finitas no altera la
+            // verificación numérica de arriba.
+            if ex.is_nan() || ey.is_nan() {
+                assert!(
+                    ax.is_nan() || ay.is_nan(),
+                    "cuerpo {} BH={},{} no es NaN aunque bruto sí (singularidad cuerpos coincidentes)",
+                    i,
+                    ax,
+                    ay
+                );
+            } else {
+                let escala = 1.0f32.max(ex.abs()).max(ey.abs());
+                let rel = ((ax - ex).abs() + (ay - ey).abs()) / escala.max(1e-6);
+                assert!(
+                    rel < 1e-4,
+                    "cuerpo {} fuerza BH={},{} bruto={},{} rel={}",
+                    i,
+                    ax,
+                    ay,
+                    ex,
+                    ey,
+                    rel
+                );
+            }
+            i += 1;
+        }
+    }
+}
+
+#[test]
+fn leafmulti_no_incluye_cuerpo_ajeno_del_rango() {
+    // B: slot 1 no vive (fuera de live_indices) y no debe aportar masa ni fuerza.
+    let mut store = make_store(4);
+    store.x_slice()[0] = 50.0;
+    store.y_slice()[0] = 50.0;
+    store.mass_slice()[0] = 1.0;
+    store.x_slice()[1] = 9999.0;
+    store.y_slice()[1] = 9999.0;
+    store.mass_slice()[1] = 100.0;
+    store.x_slice()[2] = 50.0;
+    store.y_slice()[2] = 50.0;
+    store.mass_slice()[2] = 3.0;
+    store.x_slice()[3] = 200.0;
+    store.y_slice()[3] = 200.0;
+    store.mass_slice()[3] = 5.0;
+    store.live_count = 3;
+    let li = store.live_indices_slice();
+    li[0] = 0;
+    li[1] = 2;
+    li[2] = 3;
+
+    let mut arena = QuadtreeArena::allocate(64).unwrap();
+    assert!(
+        build_quadtree(&store, &mut arena, 50.0, 50.0, 1.0).is_ok(),
+        "build no debe fallar"
+    );
+    assert!(compute_quadtree_masses(&mut arena, &store).is_ok());
+
+    let root = unsafe { arena.read_node(arena.root_index as usize) };
+    assert_eq!(root.kind, 3, "root debe ser LeafMulti (kind=3)");
+    assert_eq!(
+        root.count,
+        3,
+        "root.count debe ser 3 cuerpos (sin el ajeno slot 1)"
+    );
+    assert!(
+        (root.mass - 9.0).abs() < 1e-6,
+        "root.mass debe ser 9.0 (1+3+5, sin 100 del slot 1), fue {}",
+        root.mass
+    );
+
+    // g=1500.0 (DEFAULT_G de constants.rs): el suelo escala=1.0 convierte `rel`
+    // en error absoluto, así que con g pequeño el cuerpo ajeno (slot 1, masa 100
+    // a (9999,9999)) aportaba ≈5e-5 < 1e-4 y el bug pasaba inadvertido. Con
+    // g=1500 el error por incluirlo supera 1e-4 → el test distingue el bug;
+    // theta=0 mantiene la comparación exacta contra bruto con el mismo g.
+    let g: f32 = 1500.0;
+    let softening: f32 = 0.0;
+    let theta: f32 = 0.0;
+    compute_forces_barnes_hut_range(&arena, &store, 0, 3, g, softening, theta);
+
+    unsafe {
+        let fx = store.fx;
+        let fy = store.fy;
+        // Cuerpo 3: fuerza bruta contra {0, 2} (no contra el ajeno slot 1).
+        let (ex, ey) = bruto_esperado(&store, 3, g, softening * softening);
+        let ax = *fx.add(3);
+        let ay = *fy.add(3);
+        let escala = 1.0f32.max(ex.abs()).max(ey.abs());
+        let rel = ((ax - ex).abs() + (ay - ey).abs()) / escala.max(1e-6);
+        assert!(
+            rel < 1e-4,
+            "cuerpo 3 fuerza BH={},{} bruto={},{} rel={}",
+            ax,
+            ay,
+            ex,
+            ey,
+            rel
+        );
+    }
+}
