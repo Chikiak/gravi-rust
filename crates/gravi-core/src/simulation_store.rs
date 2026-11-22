@@ -309,7 +309,9 @@ pub fn clear_forces(store: &mut NativeStore) {
 
 /// `compute_forces_brute_range` — fuerza bruta sobre el rango `[start, end)` de
 /// objetivos contra todos los cuerpos `0..count`. Usa f32x8 con unrolling 2x.
-/// Fallback scalar solo si `live_count != count`.
+/// Cuando `live_count != count` (hay slots muertos, masa < 0) cae al camino
+/// escalar O(N²) (`compute_forces_brute_range_scalar`), que salta tanto
+/// objetivos como fuentes con `mass < 0`.
 ///
 /// Devuelve (sum_fx, sum_fy) acumulados por objetivo (uno por slot en el rango).
 #[inline(always)]
