@@ -27,6 +27,12 @@ use std::time::{SystemTime, UNIX_EPOCH, Instant};
 /// Escenario por defecto (fichero .grav para save/load).
 const SCENARIO_PATH: &str = "scenario.grav";
 
+/// Presupuesto de frame en ms: duración del frame anterior (kt_ms). Si el kt
+/// del frame anterior lo supera (comparación estricta), la política de
+/// subpasos baja a 1 y drena el acumulador a `dt` (simulación en cámara lenta
+/// con el frame fluido) en vez de mantener hasta 2 subpasos.
+const PHYSICS_BUDGET_MS: u64 = 16;
+
 /// Teclas de escenario 1..=4.
 const SCENARIO_KEYS: [KeyboardKey; 4] = [
     KeyboardKey::KEY_ONE,
@@ -450,8 +456,19 @@ impl App {
 
     /// Ejecuta subpasos de física fijos (dt) mientras el acumulador lo permita.
     /// Devuelve el número de subpasos ejecutados en este frame.
+    ///
+    /// Usa `physics_substeps_policy` con `self.kt_ms` (frame anterior) como
+    /// presupuesto y `PHYSICS_BUDGET_MS`. El residuo devuelto se asigna a
+    /// `self.accumulator`; el drenaje ocurre tras consumir subpasos.
     fn physics_substeps_for_frame(&mut self, frame_dt: f32) -> usize {
-        let n = fixed_timestep_substeps(&mut self.accumulator, self.physics_step.dt, frame_dt, 2);
+        self.accumulator += frame_dt;
+        let (n, residual) = physics_substeps_policy(
+            self.kt_ms,
+            PHYSICS_BUDGET_MS,
+            self.accumulator,
+            self.physics_step.dt,
+        );
+        self.accumulator = residual;
         for _ in 0..n {
             self.update_physics();
         }
@@ -573,6 +590,28 @@ pub fn fixed_timestep_substeps(accumulator: &mut f32, dt: f32, delta: f32, max_s
         *accumulator = 0.25;
     }
     n
+}
+
+/// Política de subpasos con presupuesto de frame.
+///
+/// - `kt_ms <= budget_ms`: tope 2, sin drenaje extra (reusa
+///   `fixed_timestep_substeps` con delta 0 y tope 2; el residuo queda en el
+///   acumulador).
+/// - `kt_ms > budget_ms`: exactamente 1 subpaso y el residuo se clampe a
+///   `<= dt` (drenaje tras consumir, nunca antes).
+///
+/// Devuelve `(n_subpasos, residuo_acumulador)`. Pura: sin asignaciones.
+pub fn physics_substeps_policy(kt_ms: u64, budget_ms: u64, mut accumulator: f32, dt: f32) -> (usize, f32) {
+    if kt_ms <= budget_ms {
+        let n = fixed_timestep_substeps(&mut accumulator, dt, 0.0, 2);
+        (n, accumulator)
+    } else {
+        let n = fixed_timestep_substeps(&mut accumulator, dt, 0.0, 1);
+        if accumulator > dt {
+            accumulator = dt;
+        }
+        (n, accumulator)
+    }
 }
 
 impl Drop for App {
