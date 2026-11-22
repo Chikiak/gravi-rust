@@ -619,3 +619,134 @@ fn leafmulti_no_incluye_cuerpo_ajeno_del_rango() {
         );
     }
 }
+
+#[test]
+fn leaf_multi_monopolo_lejano_theta_positivo() {
+    // AC1: núcleo lejano de 200 cuerpos coincidentes -> monopolo analítico.
+    const N: usize = 200;
+    let mut store = make_store(N + 1);
+    let mut i = 0usize;
+    while i < N {
+        store.x_slice()[i] = 50.0;
+        store.y_slice()[i] = 50.0;
+        store.mass_slice()[i] = 1.0;
+        i += 1;
+    }
+    // Cuerpo 200 alejado, masa 0 (inerte: no aporta masa al nodo hoja).
+    store.x_slice()[N] = 1000.0;
+    store.y_slice()[N] = 1000.0;
+    store.mass_slice()[N] = 0.0;
+    store.live_count = N + 1;
+    let li = store.live_indices_slice();
+    i = 0;
+    while i < N + 1 {
+        li[i] = i as i32;
+        i += 1;
+    }
+
+    let mut arena = QuadtreeArena::allocate(256).unwrap();
+    assert!(
+        build_quadtree(&store, &mut arena, 50.0, 50.0, 1.0).is_ok(),
+        "root_half=1.0 < MIN_CELL_SIZE=2.0 -> LeafMulti sin subdividir"
+    );
+    assert!(compute_quadtree_masses(&mut arena, &store).is_ok());
+
+    let root = unsafe { arena.read_node(arena.root_index as usize) };
+    assert_eq!(root.kind, 3, "root debe ser LeafMulti (kind=3)");
+    assert!(
+        (root.mass - 200.0f32).abs() < 1e-6,
+        "root.mass debe ser 200.0, fue {}",
+        root.mass
+    );
+
+    let g: f32 = 1.0;
+    let softening: f32 = 0.0;
+    let theta: f32 = 0.3;
+    compute_forces_barnes_hut_range(&arena, &store, 0, N + 1, g, softening, theta);
+
+    unsafe {
+        let fx = store.fx;
+        let fy = store.fy;
+        let ix = *store.x.add(N);
+        let iy = *store.y.add(N);
+        // Monopolo analítico: M=200 en (50,50) sobre el cuerpo en (1000,1000).
+        let dx = 50.0f32 - ix;
+        let dy = 50.0f32 - iy;
+        let d2 = dx * dx + dy * dy;
+        let inv_dist3 = d2.recip() * d2.recip().sqrt();
+        let ex = g * 200.0f32 * inv_dist3 * dx;
+        let ey = g * 200.0f32 * inv_dist3 * dy;
+        let ax = *fx.add(N);
+        let ay = *fy.add(N);
+        let escala = 1.0f32.max(ex.abs()).max(ey.abs());
+        let rel = ((ax - ex).abs() + (ay - ey).abs()) / escala.max(1e-6);
+        assert!(
+            rel < 1e-5,
+            "cuerpo 200 monopolo lejano: BH={},{} analitico={},{} rel={}",
+            ax,
+            ay,
+            ex,
+            ey,
+            rel
+        );
+    }
+}
+
+#[test]
+fn leaf_multi_cerca_cadena_exacta() {
+    // AC3: cuerpo cerca/dentro de la celda multi -> criterio no satisfecho -> cadena exacta.
+    const N: usize = 200;
+    let mut store = make_store(N + 1);
+    let mut i = 0usize;
+    while i < N {
+        store.x_slice()[i] = 50.0;
+        store.y_slice()[i] = 50.0;
+        store.mass_slice()[i] = 1.0;
+        i += 1;
+    }
+    // Cuerpo 200 dentro/borde de la celda (50.5, 50.5).
+    store.x_slice()[N] = 50.5;
+    store.y_slice()[N] = 50.5;
+    store.mass_slice()[N] = 1.0;
+    store.live_count = N + 1;
+    let li = store.live_indices_slice();
+    i = 0;
+    while i < N + 1 {
+        li[i] = i as i32;
+        i += 1;
+    }
+
+    let mut arena = QuadtreeArena::allocate(256).unwrap();
+    assert!(
+        build_quadtree(&store, &mut arena, 50.0, 50.0, 1.0).is_ok(),
+        "root_half=1.0 < MIN_CELL_SIZE=2.0 -> LeafMulti"
+    );
+    assert!(compute_quadtree_masses(&mut arena, &store).is_ok());
+
+    let root = unsafe { arena.read_node(arena.root_index as usize) };
+    assert_eq!(root.kind, 3, "root debe ser LeafMulti (kind=3)");
+
+    let g: f32 = 1500.0;
+    let softening: f32 = 1.0;
+    let theta: f32 = 0.3;
+    compute_forces_barnes_hut_range(&arena, &store, 0, N + 1, g, softening, theta);
+
+    unsafe {
+        let fx = store.fx;
+        let fy = store.fy;
+        let (ex, ey) = bruto_esperado(&store, N, g, softening * softening);
+        let ax = *fx.add(N);
+        let ay = *fy.add(N);
+        let escala = 1.0f32.max(ex.abs()).max(ey.abs());
+        let rel = ((ax - ex).abs() + (ay - ey).abs()) / escala.max(1e-6);
+        assert!(
+            rel < 1e-4,
+            "cuerpo 200 cerca: BH={},{} bruto={},{} rel={}",
+            ax,
+            ay,
+            ex,
+            ey,
+            rel
+        );
+    }
+}

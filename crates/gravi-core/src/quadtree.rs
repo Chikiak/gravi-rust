@@ -851,33 +851,54 @@ pub fn compute_forces_barnes_hut_range(
                         ax = ax + acc * dx;
                         ay = ay + acc * dy;
                     }
-                    3 => { // LeafMulti: recorrer la cadena cuerpo a cuerpo (sin monopolo)
-                        // Misma fórmula pairwise que Leaf (kind 1); se salta el
-                        // propio cuerpo (j == i) y masas no positivas, y se
-                        // sigue body_next hasta -1.
-                        let mut j = node.body_index as usize;
-                        loop {
-                            if j != i {
-                                let mj = *mass.add(j);
-                                if mj > 0.0 {
-                                    let dx = *x.add(j) - ix;
-                                    let dy = *y.add(j) - iy;
-                                    let mut dist2 = dx * dx + dy * dy + soft2;
-                                    if dist2 <= 0.0 {
-                                        dist2 = 1e-32f32;
-                                    }
-                                    let r2 = dist2.recip();
-                                    let inv_dist3 = r2 * r2.sqrt();
-                                    let acc = g * mj * inv_dist3;
-                                    ax = ax + acc * dx;
-                                    ay = ay + acc * dy;
+                    3 => { // LeafMulti: criterio de apertura + monopolo (o cadena exacta)
+                        // Criterio de apertura con geometría del nodo (mismo que Internal):
+                        //   s² < θ²·d², s = 2·half_size, d = distancia cuerpo al centro.
+                        let s = 2.0 * node.half_size;
+                        let s2 = s * s;
+                        let dx = node.center_x - ix;
+                        let dy = node.center_y - iy;
+                        let d2 = dx * dx + dy * dy;
+                        if s2 < theta2 * d2 {
+                            // Aceptar monopolo del nodo con masa agregada (node.mass).
+                            let mj = node.mass;
+                            if mj > 0.0 {
+                                let mut dist2 = d2 + soft2;
+                                if dist2 <= 0.0 {
+                                    dist2 = 1e-32f32;
                                 }
+                                let r2 = dist2.recip();
+                                let inv_dist3 = r2 * r2.sqrt();
+                                let acc = g * mj * inv_dist3;
+                                ax = ax + acc * dx;
+                                ay = ay + acc * dy;
                             }
-                            let nxt = *body_next.add(j);
-                            if nxt == -1i32 {
-                                break;
+                        } else {
+                            // Cadena exacta cuerpo a cuerpo (misma fórmula que kind 1).
+                            let mut j = node.body_index as usize;
+                            loop {
+                                if j != i {
+                                    let mj = *mass.add(j);
+                                    if mj > 0.0 {
+                                        let dxj = *x.add(j) - ix;
+                                        let dyj = *y.add(j) - iy;
+                                        let mut dist2 = dxj * dxj + dyj * dyj + soft2;
+                                        if dist2 <= 0.0 {
+                                            dist2 = 1e-32f32;
+                                        }
+                                        let r2 = dist2.recip();
+                                        let inv_dist3 = r2 * r2.sqrt();
+                                        let acc = g * mj * inv_dist3;
+                                        ax = ax + acc * dxj;
+                                        ay = ay + acc * dyj;
+                                    }
+                                }
+                                let nxt = *body_next.add(j);
+                                if nxt == -1i32 {
+                                    break;
+                                }
+                                j = nxt as usize;
                             }
-                            j = nxt as usize;
                         }
                     }
                     2 => { // Internal: criterio de apertura
