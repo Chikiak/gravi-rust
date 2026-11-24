@@ -246,7 +246,9 @@ fn ac7_resolve_collisions_skips_dead_slots() {
     }
     store.live_count = 3;
 
-    let mut grid = SpatialGrid::allocate(4, 4, 2).unwrap();
+    // body_count_max debe ser >= store.count (3) porque next indexa por
+    // índice de entidad (0..store.count).
+    let mut grid = SpatialGrid::allocate(4, 4, 3).unwrap();
     grid.set_cell_size(64.0);
     rebuild_grid(&mut grid, &store);
 
