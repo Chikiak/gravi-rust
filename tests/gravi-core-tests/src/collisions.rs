@@ -257,6 +257,17 @@ fn ac7_resolve_collisions_skips_dead_slots() {
     assert_eq!(n, 1, "solo el par vivo (0,1) colisiona");
 }
 
+/// `rebuild_grid` panica si `body_count_max < store.count`: `next` se
+/// dimensiona por entidad (0..store.count) y desbordaría.
+#[test]
+#[should_panic(expected = "body_count_max")]
+fn rebuild_grid_panics_si_body_count_max_menor_que_store_count() {
+    let store = make_store(3); // count = 3
+    let mut grid = SpatialGrid::allocate(4, 4, 2).unwrap(); // body_count_max = 2 < 3
+    grid.set_cell_size(64.0);
+    rebuild_grid(&mut grid, &store);
+}
+
 /// Zero-allocation en hot path: comprobación por inspección de código
 /// (no hay Vec/String/format!/Box/closures en resolve_elastic_collision ni
 /// resolve_collisions). Salvaguarda: llamada repetida sin panic.

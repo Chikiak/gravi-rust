@@ -1,7 +1,7 @@
 ---
 phase: R6
 title: FPS estables con núcleos colapsados (hot path Barnes-Hut)
-status: todo            # todo | in_progress | done
+status: in_progress     # todo | in_progress | done
 master: —
 ---
 
@@ -113,7 +113,7 @@ valor; R6-03 agrupa dos asuntos menores que comparten `app.rs`.
 ## Prompt de sesión (copiar/pegar para cada issue)
 
 ```text
-Implementa el issue `plan/R6-rendimiento/<ID>.md`.
+Implementa el issue `plans/R6-rendimiento/<ID>.md`.
 Léelo entero antes de tocar código y empieza por su sección "Leer primero".
 Ejecuta los comandos de "Verificación" y no lo des por terminado hasta cubrir cada
 criterio de aceptación con evidencia. Al acabar: actualiza `status` y rellena

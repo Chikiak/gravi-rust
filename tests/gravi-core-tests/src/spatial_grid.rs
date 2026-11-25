@@ -44,7 +44,7 @@ fn ac2_rebuild_grid_no_write_outside_bucket_head() {
     store.live_count = 4;
     let li = store.live_indices_slice_mut();
     li[0] = 0; li[1] = 1; li[2] = 2; li[3] = 3;
-    drop(li);
+    let _ = li;
 
     let mut grid = SpatialGrid::allocate(30, 16, 4).unwrap();
     grid.set_cell_size(64.0);
@@ -78,7 +78,7 @@ fn ac3_dead_slots_skipped() {
     store.live_count = 3;
     let li = store.live_indices_slice_mut();
     li[0] = 0; li[1] = 1; li[2] = 2;
-    drop(li);
+    let _ = li;
 
     let mut grid = SpatialGrid::allocate(30, 16, 3).unwrap();
     grid.set_cell_size(64.0);
@@ -109,7 +109,7 @@ fn ac4_enumerator_emits_each_pair_once() {
     store.live_count = 3;
     let li = store.live_indices_slice_mut();
     li[0] = 0; li[1] = 1; li[2] = 2;
-    drop(li);
+    let _ = li;
 
     let mut grid = SpatialGrid::allocate(30, 16, 3).unwrap();
     grid.set_cell_size(64.0);

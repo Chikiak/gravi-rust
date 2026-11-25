@@ -54,7 +54,10 @@ fn timing_write_f32_fixed_100k() {
 
 #[test]
 fn hud_line1_label_table() {
-    assert_eq!(hud_line1_label("brute", 100, 100), "scalar");
-    assert_eq!(hud_line1_label("brute", 90, 100), "scalar-fallback");
-    assert_eq!(hud_line1_label("bhut", 90, 100), "scalar");
+    assert_eq!(hud_line1_label("brute", false, 100, 100), "scalar");
+    assert_eq!(hud_line1_label("brute", true, 100, 100), "portable");
+    assert_eq!(hud_line1_label("brute", false, 90, 100), "scalar-fallback");
+    assert_eq!(hud_line1_label("brute", true, 90, 100), "scalar-fallback");
+    assert_eq!(hud_line1_label("bhut", false, 90, 100), "scalar");
+    assert_eq!(hud_line1_label("bhut", true, 90, 100), "portable");
 }

@@ -80,3 +80,19 @@ fn policy_delta_desbocado() {
     assert_eq!(n, 1, "delta descontrolado con kt excedido -> 1 subpaso");
     assert!(acc <= DT, "acumulador clampeado a <= dt aunque el delta sea desbocado");
 }
+
+#[test]
+fn policy_presupuesto_limite_igual() {
+    // kt_ms == budget_ms: rama kt <= budget, tope 2, sin drenaje extra.
+    let (n, acc) = physics_substeps_policy(16, 16, 2.5 * DT, DT);
+    assert_eq!(n, 2, "kt igual al presupuesto permite hasta 2 subpasos");
+    assert!((acc - 0.5 * DT).abs() < f32::EPSILON * 8.0, "residuo natural sin drenaje extra");
+}
+
+#[test]
+fn policy_presupuesto_limite_uno_mas() {
+    // kt_ms == budget_ms + 1: rama kt > budget, exactamente 1 subpaso, acc <= dt.
+    let (n, acc) = physics_substeps_policy(17, 16, 2.5 * DT, DT);
+    assert_eq!(n, 1, "kt un ms por encima del presupuesto -> 1 subpaso");
+    assert!(acc <= DT, "acumulador drenado a <= dt");
+}

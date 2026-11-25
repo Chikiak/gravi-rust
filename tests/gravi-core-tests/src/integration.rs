@@ -228,13 +228,13 @@ fn barnes_hut_vs_brute_small_n_within_threshold() {
     }
     drop(c);
     store.live_count = n;
-    let mut li = store.live_indices_slice_mut();
+    let li = store.live_indices_slice_mut();
     i = 0;
     while i < n {
         li[i] = i as i32;
         i += 1;
     }
-    drop(li);
+    let _ = li;
 
     // Fuerza bruta esperada (misma fórmula que quadtree::tests::bruto_esperado).
     unsafe {

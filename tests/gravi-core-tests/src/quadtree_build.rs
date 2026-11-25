@@ -50,7 +50,7 @@ fn ac4_build_arbol_simple_raiz_una_hoja() {
     store.live_count = 1;
     let li = store.live_indices_slice_mut();
     li[0] = 0;
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(4).unwrap();
     let res = build_quadtree(&store, &mut arena, 0.0, 0.0, 100.0);
@@ -79,7 +79,7 @@ fn ac5_build_subdivide_hoja_al_segundo_cuerpo() {
     let li = store.live_indices_slice_mut();
     li[0] = 0;
     li[1] = 1;
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(8).unwrap();
     let res = build_quadtree(&store, &mut arena, 50.0, 50.0, 100.0);
@@ -149,7 +149,7 @@ fn ac9_build_masas_acumuladas_en_camino() {
     li[0] = 0;
     li[1] = 1;
     li[2] = 2;
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(16).unwrap();
     assert!(build_quadtree(&store, &mut arena, 50.0, 50.0, 100.0).is_ok());
@@ -198,7 +198,7 @@ fn a2_masses_acumula_masa_y_count_post_orden() {
     li[0] = 0;
     li[1] = 1;
     li[2] = 2;
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(32).unwrap();
     assert!(build_quadtree(&store, &mut arena, 50.0, 50.0, 100.0).is_ok());
@@ -244,7 +244,7 @@ fn a2_masses_una_hoja_sin_subdividir() {
     store.live_count = 1;
     let li = store.live_indices_slice_mut();
     li[0] = 0;
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(4).unwrap();
     assert!(build_quadtree(&store, &mut arena, 0.0, 0.0, 100.0).is_ok());
@@ -277,7 +277,7 @@ fn a2_root_un_cuerpo_centro_en_el_cuerpo() {
     store.live_count = 1;
     let li = store.live_indices_slice_mut();
     li[0] = 0;
-    drop(li);
+    let _ = li;
 
     let (cx, cy, half) = root_from_live_bodies(&store);
     assert_eq!(cx, 100.0);
@@ -304,7 +304,7 @@ fn a2_root_centro_dentro_del_rectangulo_de_vivos() {
     for i in 0..4usize {
         li[i] = i as i32;
     }
-    drop(li);
+    let _ = li;
 
     let (cx, cy, half) = root_from_live_bodies(&store);
     assert_eq!(cx, 50.0);
@@ -337,7 +337,7 @@ fn a2_root_solo_cuerpos_vivos_ignorando_muertos() {
     let li = store.live_indices_slice_mut();
     li[0] = 0;
     li[1] = 2;
-    drop(li);
+    let _ = li;
 
     let (cx, cy, half) = root_from_live_bodies(&store);
     assert_eq!(cx, 15.0); // (10+20)/2
@@ -376,7 +376,7 @@ fn ac_overflow_no_corrompe_arena() {
     let li = store.live_indices_slice_mut();
     li[0] = 0;
     li[1] = 1;
-    drop(li);
+    let _ = li;
 
     // Arena artificialmente pequeña: capacidad 4 (< 5 nodos para raíz + 4 hijos).
     // Se usa allocate(1) (cap=32) y se reduce capacity para forzar Overflow
@@ -440,7 +440,7 @@ fn quadtree_root_clamp_min_max_half() {
     let li = store.live_indices_slice_mut();
     li[0] = 0;
     li[1] = 1;
-    drop(li);
+    let _ = li;
 
     let (_cx, _cy, half) = root_from_live_bodies(&store);
     assert!(
@@ -462,7 +462,7 @@ fn quadtree_root_clamp_min_max_half() {
     let li2 = store2.live_indices_slice_mut();
     li2[0] = 0;
     li2[1] = 1;
-    drop(li2);
+    let _ = li2;
 
     let (cx2, cy2, half2) = root_from_live_bodies(&store2);
     assert!(
@@ -500,7 +500,7 @@ fn quadtree_no_desborda_arena_con_cuerpos_coincidentes() {
         li[i] = i as i32;
         i += 1;
     }
-    drop(li);
+    let _ = li;
 
     // Arena pequeña: capacidad suficiente solo para la raíz. Con
     // root_half=1.0 (< MIN_CELL_SIZE=2.0) se degrada inmediatamente a
@@ -559,7 +559,7 @@ fn quadtree_leaf_multi_masa_acumulada() {
     store.live_count = n;
     let li = store.live_indices_slice_mut();
     li[0] = 0; li[1] = 1; li[2] = 2;
-    drop(li);
+    let _ = li;
 
     // Root half muy pequeño para forzar degradación inmediata (half=4 < MIN_CELL_SIZE=2? no, 4>=2).
     // Usar profundidad: forzar que no se subdivida pasando root_half=2.0 (>=MIN_CELL_SIZE)
@@ -607,7 +607,7 @@ fn ac_insert_profundo_limite_32() {
     store.live_count = n;
     let li = store.live_indices_slice_mut();
     li[0] = 0; li[1] = 1; li[2] = 2; li[3] = 3;
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(256).unwrap();
     let res = build_quadtree(&store, &mut arena, 50.0, 50.0, 64.0);
@@ -651,7 +651,7 @@ fn ac_overflow_solo_arena_llena_real() {
         li[i] = i as i32;
         i += 1;
     }
-    drop(li);
+    let _ = li;
 
     // Arena con capacidad suficiente para raíz + degradación (no se consumen
     // nodos extra en LeafMulti). Capacidad muy pequeña (solo raíz) debería

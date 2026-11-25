@@ -376,7 +376,7 @@ mod tests {
         assert_eq!(s2.as_ptr(), ptr, "el puntero debe ser estable entre llamadas");
         assert_eq!(s2.len(), len, "len debe ser estable entre llamadas");
         assert_eq!(s2[3], 42.0, "la escritura vía slice debe persistir en el canal");
-        drop(s2);
+        let _ = s2;
 
         // Corrección inversa: escritura por puntero crudo visible vía slice.
         unsafe { *store.x.add(5) = -1.5; }
@@ -390,7 +390,9 @@ mod tests {
         let mut store = NativeStore::new(n).expect("store creation failed");
         store.init_lifecycle();
 
-        // Tomar una vista a la vez (cada una necesita &mut self; no pueden coexistir).
+        // `*_slice(&self)` devuelve vistas compartidas &[T] (coexisten entre sí);
+        // `*_slice_mut(&mut self)` es la vista exclusiva. Todas apuntan al canal
+        // correspondiente sin copiar.
         macro_rules! check_slice {
             ($slice:expr, $ptr:expr, $len:expr) => {{
                 let s = $slice;

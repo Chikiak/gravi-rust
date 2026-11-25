@@ -66,7 +66,7 @@ fn b7_theta_cero_coincide_con_fuerza_bruta() {
     store.live_count = 5;
     let li = store.live_indices_slice_mut();
     for i in 0..5usize { li[i] = i as i32; }
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     assert!(build_quadtree(&store, &mut arena, 50.0, 50.0, 100.0).is_ok());
@@ -109,7 +109,7 @@ fn b7_theta_positivo_error_acotado() {
     let li = store.live_indices_slice_mut();
     i = 0;
     while i < 60usize { li[i] = i as i32; i += 1; }
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(256).unwrap();
     assert!(build_quadtree(&store, &mut arena, 50.0, 50.0, 60.0).is_ok());
@@ -159,7 +159,7 @@ fn b7_cluster_degenerado_sin_nan() {
     let li = store.live_indices_slice_mut();
     i = 0;
     while i < 12usize { li[i] = i as i32; i += 1; }
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(256).unwrap();
     let (cx, cy, half) = root_from_live_bodies(&store);
@@ -216,7 +216,7 @@ fn quadtree_leaf_multi_fuerza_igual_bruto() {
     store.live_count = n;
     let li = store.live_indices_slice_mut();
     li[0] = 0; li[1] = 1; li[2] = 2; li[3] = 3;
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     // Celda pequeña (half=1.0 < MIN_CELL_SIZE=2.0) -> no subdivide -> LeafMulti.
@@ -288,7 +288,7 @@ fn leafbucket_masa_count_correctos() {
     li[0] = 0;
     li[1] = 1;
     li[2] = 2;
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     assert!(
@@ -327,7 +327,7 @@ fn leafbucket_fuerza_equivale_brute_con_cuerpos_coincidentes() {
     li[1] = 1;
     li[2] = 2;
     li[3] = 3;
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     assert!(
@@ -400,7 +400,7 @@ fn leafbucket_arena_no_desborda_con_cascada_coincidentes() {
         li[i] = i as i32;
         i += 1;
     }
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     assert!(
@@ -448,7 +448,7 @@ fn leafmulti_live_indices_no_consecutivos_masa_count() {
     li[1] = 0;
     li[2] = 1;
     li[3] = 3;
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     assert!(
@@ -496,7 +496,7 @@ fn leafmulti_live_indices_no_consecutivos_fuerza_igual_bruto() {
     li[1] = 0;
     li[2] = 1;
     li[3] = 3;
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     assert!(
@@ -577,7 +577,7 @@ fn leafmulti_no_incluye_cuerpo_ajeno_del_rango() {
     li[0] = 0;
     li[1] = 2;
     li[2] = 3;
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     assert!(
@@ -637,8 +637,11 @@ fn leaf_multi_monopolo_lejano_theta_positivo() {
     let mut store = make_store(N + 1);
     let mut i = 0usize;
     while i < N {
-        store.x_slice_mut()[i] = 50.0;
-        store.y_slice_mut()[i] = 50.0;
+        // Núcleo coincidente desplazado del centro geométrico del nodo (50,50)
+        // pero dentro de la celda [49,51] x [49,51], para que el test distinga
+        // el monopolo (usa centro (50,50)) de la cadena exacta (usa (49.1,49.3)).
+        store.x_slice_mut()[i] = 49.1;
+        store.y_slice_mut()[i] = 49.3;
         store.mass_slice_mut()[i] = 1.0;
         i += 1;
     }
@@ -653,7 +656,7 @@ fn leaf_multi_monopolo_lejano_theta_positivo() {
         li[i] = i as i32;
         i += 1;
     }
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(256).unwrap();
     assert!(
@@ -680,7 +683,8 @@ fn leaf_multi_monopolo_lejano_theta_positivo() {
         let fy = store.fy;
         let ix = *store.x.add(N);
         let iy = *store.y.add(N);
-        // Monopolo analítico: M=200 en (50,50) sobre el cuerpo en (1000,1000).
+        // Monopolo analítico: M=200 en el centro geométrico del nodo (50,50)
+        // sobre el cuerpo en (1000,1000).
         let dx = 50.0f32 - ix;
         let dy = 50.0f32 - iy;
         let d2 = dx * dx + dy * dy;
@@ -726,7 +730,7 @@ fn leaf_multi_cerca_cadena_exacta() {
         li[i] = i as i32;
         i += 1;
     }
-    drop(li);
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(256).unwrap();
     assert!(
