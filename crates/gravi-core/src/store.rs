@@ -4,20 +4,6 @@
 use crate::native_mem::{aligned_alloc, aligned_free};
 use std::ptr::NonNull;
 
-/// Vista cruda vacía y colgante (alineada) para invalidar las cachés en `Drop`.
-/// `slice_from_raw_parts_mut` es seguro (solo combina puntero + longitud) pero
-/// exige puntero no-nulo y alineado incluso con len 0.
-fn dangling_f32_slice() -> *mut [f32] {
-    let ptr = NonNull::<f32>::dangling().as_ptr();
-    std::ptr::slice_from_raw_parts_mut(ptr, 0)
-}
-
-/// Igual que [`dangling_f32_slice`] para los canales de índice (`i32`).
-fn dangling_i32_slice() -> *mut [i32] {
-    let ptr = NonNull::<i32>::dangling().as_ptr();
-    std::ptr::slice_from_raw_parts_mut(ptr, 0)
-}
-
 /// Almacenamiento SoA (Structure of Arrays) sobre memoria nativa.
 ///
 /// Cada canal (X, Y, Vx, Vy, Fx, Fy, Mass, Radius) es un bloque independiente
@@ -49,28 +35,6 @@ pub struct NativeStore {
     pub byte_alignment: usize,
     channel_size: usize,
     gen_channel_size: usize,
-    /// Longitud con la que se materializaron las vistas cacheadas en `new`.
-    /// Coincide con `count` salvo mutación externa del campo público `count`;
-    /// en ese caso `*_slice()` toma la ruta de reconstrucción al vuelo.
-    slice_count: usize,
-    /// Vistas cacheadas: puntero crudo + longitud materializados UNA sola vez
-    /// en `new`. `*_slice()` devuelve `&mut *self.<canal>_cache` sin reconstruir
-    /// `from_raw_parts_mut` por llamada. Los canales no se reasignan nunca tras
-    /// `new` (solo `Drop` los invalida), así que la caché es válida durante toda
-    /// la vida del store; `init_lifecycle` no la refresca porque no mueve buffers.
-    x_cache: *mut [f32],
-    y_cache: *mut [f32],
-    vx_cache: *mut [f32],
-    vy_cache: *mut [f32],
-    fx_cache: *mut [f32],
-    fy_cache: *mut [f32],
-    mass_cache: *mut [f32],
-    radius_cache: *mut [f32],
-    generation_cache: *mut [i32],
-    free_list_cache: *mut [i32],
-    live_indices_cache: *mut [i32],
-    live_pos_cache: *mut [i32],
-    body_next_cache: *mut [i32],
 }
 
 impl NativeStore {
@@ -130,24 +94,6 @@ impl NativeStore {
             byte_alignment: 64,
             channel_size: size,
             gen_channel_size: gen_size,
-            slice_count: count,
-            // Caché materializada: fat pointer crudo por canal (sin crear
-            // referencia todavía). Es la vista que devuelven los `*_slice()`.
-            x_cache: std::ptr::slice_from_raw_parts_mut(x_ptr, count),
-            y_cache: std::ptr::slice_from_raw_parts_mut(y_ptr, count),
-            vx_cache: std::ptr::slice_from_raw_parts_mut(vx_ptr, count),
-            vy_cache: std::ptr::slice_from_raw_parts_mut(vy_ptr, count),
-            fx_cache: std::ptr::slice_from_raw_parts_mut(fx_ptr, count),
-            fy_cache: std::ptr::slice_from_raw_parts_mut(fy_ptr, count),
-            mass_cache: std::ptr::slice_from_raw_parts_mut(mass_ptr, count),
-            radius_cache: std::ptr::slice_from_raw_parts_mut(radius_ptr, count),
-            generation_cache: std::ptr::slice_from_raw_parts_mut(generation_ptr, count),
-            free_list_cache: std::ptr::slice_from_raw_parts_mut(free_list_ptr, count),
-            live_indices_cache: std::ptr::slice_from_raw_parts_mut(
-                live_indices_ptr, count,
-            ),
-            live_pos_cache: std::ptr::slice_from_raw_parts_mut(live_pos_ptr, count),
-            body_next_cache: std::ptr::slice_from_raw_parts_mut(body_next_ptr, count),
         })
     }
 
@@ -173,130 +119,183 @@ impl NativeStore {
         self.free_head = 0;
     }
 
-    /// Devuelve una vista mutable sobre el canal X de `count` elementos.
-    ///
-    /// Ruta cacheada (normal): devuelve la vista materializada en `new`
-    /// (`&mut *self.x_cache`), puntero estable entre llamadas y sin
-    /// `from_raw_parts_mut` por llamada. Solo si el campo público `count` se
-    /// mutó externamente (no ocurre en el ciclo normal) se reconstruye la vista
-    /// al vuelo; con `&self` no se puede refrescar la caché en ese caso.
-    pub fn x_slice(&self) -> &mut [f32] {
-        if self.count == self.slice_count {
-            unsafe { &mut *self.x_cache }
-        } else {
-            unsafe { std::slice::from_raw_parts_mut(self.x, self.count) }
-        }
+    /// Vista inmutable (compartida, solo lectura) sobre el canal X de `count`
+    /// elementos. Varios llamadores pueden tener `&[f32]` a la vez porque el
+    /// receptor es `&self`; no hay aliasing mutable.
+    pub fn x_slice(&self) -> &[f32] {
+        unsafe { std::slice::from_raw_parts(self.x, self.count) }
     }
 
-    /// Devuelve una vista mutable sobre el canal Y de `count` elementos
-    /// (misma caché que [`NativeStore::x_slice`]).
-    pub fn y_slice(&self) -> &mut [f32] {
-        if self.count == self.slice_count {
-            unsafe { &mut *self.y_cache }
-        } else {
-            unsafe { std::slice::from_raw_parts_mut(self.y, self.count) }
-        }
+    /// Vista exclusiva (lectura/escritura) sobre el canal X de `count`
+    /// elementos. Requiere `&mut self`, que garantiza exclusividad y elimina
+    /// el aliasing mutable que tenían las vistas `&mut` obtenidas desde `&self`.
+    pub fn x_slice_mut(&mut self) -> &mut [f32] {
+        unsafe { std::slice::from_raw_parts_mut(self.x, self.count) }
     }
 
-    /// Devuelve una vista mutable sobre el canal Vx de `count` elementos
-    /// (misma caché que [`NativeStore::x_slice`]).
-    pub fn vx_slice(&self) -> &mut [f32] {
-        if self.count == self.slice_count {
-            unsafe { &mut *self.vx_cache }
-        } else {
-            unsafe { std::slice::from_raw_parts_mut(self.vx, self.count) }
-        }
+    /// Vista inmutable (compartida, solo lectura) sobre el canal Y.
+    pub fn y_slice(&self) -> &[f32] {
+        unsafe { std::slice::from_raw_parts(self.y, self.count) }
     }
 
-    /// Devuelve una vista mutable sobre el canal Vy de `count` elementos
-    /// (misma caché que [`NativeStore::x_slice`]).
-    pub fn vy_slice(&self) -> &mut [f32] {
-        if self.count == self.slice_count {
-            unsafe { &mut *self.vy_cache }
-        } else {
-            unsafe { std::slice::from_raw_parts_mut(self.vy, self.count) }
-        }
+    /// Vista exclusiva (lectura/escritura) sobre el canal Y.
+    pub fn y_slice_mut(&mut self) -> &mut [f32] {
+        unsafe { std::slice::from_raw_parts_mut(self.y, self.count) }
     }
 
-    /// Devuelve una vista mutable sobre el canal de generaciones de `count`
-    /// elementos (misma caché que [`NativeStore::x_slice`]).
-    pub fn generation_slice(&self) -> &mut [i32] {
-        if self.count == self.slice_count {
-            unsafe { &mut *self.generation_cache }
-        } else {
-            unsafe { std::slice::from_raw_parts_mut(self.generation, self.count) }
-        }
+    /// Vista inmutable (compartida, solo lectura) sobre el canal Vx.
+    pub fn vx_slice(&self) -> &[f32] {
+        unsafe { std::slice::from_raw_parts(self.vx, self.count) }
     }
 
-    /// Devuelve una vista mutable sobre el canal Fx de `count` elementos
-    /// (misma caché que [`NativeStore::x_slice`]).
-    pub fn fx_slice(&self) -> &mut [f32] {
-        if self.count == self.slice_count {
-            unsafe { &mut *self.fx_cache }
-        } else {
-            unsafe { std::slice::from_raw_parts_mut(self.fx, self.count) }
-        }
+    /// Vista exclusiva (lectura/escritura) sobre el canal Vx.
+    pub fn vx_slice_mut(&mut self) -> &mut [f32] {
+        unsafe { std::slice::from_raw_parts_mut(self.vx, self.count) }
     }
 
-    /// Devuelve una vista mutable sobre el canal Fy de `count` elementos
-    /// (misma caché que [`NativeStore::x_slice`]).
-    pub fn fy_slice(&self) -> &mut [f32] {
-        if self.count == self.slice_count {
-            unsafe { &mut *self.fy_cache }
-        } else {
-            unsafe { std::slice::from_raw_parts_mut(self.fy, self.count) }
-        }
+    /// Vista inmutable (compartida, solo lectura) sobre el canal Vy.
+    pub fn vy_slice(&self) -> &[f32] {
+        unsafe { std::slice::from_raw_parts(self.vy, self.count) }
     }
 
-    /// Devuelve una vista mutable sobre el canal Mass de `count` elementos
-    /// (misma caché que [`NativeStore::x_slice`]).
-    pub fn mass_slice(&self) -> &mut [f32] {
-        if self.count == self.slice_count {
-            unsafe { &mut *self.mass_cache }
-        } else {
-            unsafe { std::slice::from_raw_parts_mut(self.mass, self.count) }
-        }
+    /// Vista exclusiva (lectura/escritura) sobre el canal Vy.
+    pub fn vy_slice_mut(&mut self) -> &mut [f32] {
+        unsafe { std::slice::from_raw_parts_mut(self.vy, self.count) }
     }
 
-    /// Devuelve una vista mutable sobre el canal Radius de `count` elementos
-    /// (misma caché que [`NativeStore::x_slice`]).
-    pub fn radius_slice(&self) -> &mut [f32] {
-        if self.count == self.slice_count {
-            unsafe { &mut *self.radius_cache }
-        } else {
-            unsafe { std::slice::from_raw_parts_mut(self.radius, self.count) }
-        }
+    /// Vista inmutable (compartida, solo lectura) sobre el canal de
+    /// generaciones.
+    pub fn generation_slice(&self) -> &[i32] {
+        unsafe { std::slice::from_raw_parts(self.generation, self.count) }
     }
 
-    /// Devuelve una vista mutable sobre el canal FreeList de `count` elementos
-    /// (misma caché que [`NativeStore::x_slice`]).
-    pub fn free_list_slice(&self) -> &mut [i32] {
-        if self.count == self.slice_count {
-            unsafe { &mut *self.free_list_cache }
-        } else {
-            unsafe { std::slice::from_raw_parts_mut(self.free_list, self.count) }
-        }
+    /// Vista exclusiva (lectura/escritura) sobre el canal de generaciones.
+    pub fn generation_slice_mut(&mut self) -> &mut [i32] {
+        unsafe { std::slice::from_raw_parts_mut(self.generation, self.count) }
     }
 
-    /// Devuelve una vista mutable sobre el canal LiveIndices de `count`
-    /// elementos (misma caché que [`NativeStore::x_slice`]).
-    pub fn live_indices_slice(&self) -> &mut [i32] {
-        if self.count == self.slice_count {
-            unsafe { &mut *self.live_indices_cache }
-        } else {
-            unsafe { std::slice::from_raw_parts_mut(self.live_indices, self.count) }
-        }
+    /// Vista inmutable (compartida, solo lectura) sobre el canal Fx.
+    pub fn fx_slice(&self) -> &[f32] {
+        unsafe { std::slice::from_raw_parts(self.fx, self.count) }
     }
 
-    /// Devuelve una vista mutable sobre el canal LivePos de `count` elementos
-    /// (misma caché que [`NativeStore::x_slice`]).
-    pub fn live_pos_slice(&self) -> &mut [i32] {
-        if self.count == self.slice_count {
-            unsafe { &mut *self.live_pos_cache }
-        } else {
-            unsafe { std::slice::from_raw_parts_mut(self.live_pos, self.count) }
+    /// Vista exclusiva (lectura/escritura) sobre el canal Fx.
+    pub fn fx_slice_mut(&mut self) -> &mut [f32] {
+        unsafe { std::slice::from_raw_parts_mut(self.fx, self.count) }
+    }
+
+    /// Vista inmutable (compartida, solo lectura) sobre el canal Fy.
+    pub fn fy_slice(&self) -> &[f32] {
+        unsafe { std::slice::from_raw_parts(self.fy, self.count) }
+    }
+
+    /// Vista exclusiva (lectura/escritura) sobre el canal Fy.
+    pub fn fy_slice_mut(&mut self) -> &mut [f32] {
+        unsafe { std::slice::from_raw_parts_mut(self.fy, self.count) }
+    }
+
+    /// Vista inmutable (compartida, solo lectura) sobre el canal Mass.
+    pub fn mass_slice(&self) -> &[f32] {
+        unsafe { std::slice::from_raw_parts(self.mass, self.count) }
+    }
+
+    /// Vista exclusiva (lectura/escritura) sobre el canal Mass.
+    pub fn mass_slice_mut(&mut self) -> &mut [f32] {
+        unsafe { std::slice::from_raw_parts_mut(self.mass, self.count) }
+    }
+
+    /// Vista inmutable (compartida, solo lectura) sobre el canal Radius.
+    pub fn radius_slice(&self) -> &[f32] {
+        unsafe { std::slice::from_raw_parts(self.radius, self.count) }
+    }
+
+    /// Vista exclusiva (lectura/escritura) sobre el canal Radius.
+    pub fn radius_slice_mut(&mut self) -> &mut [f32] {
+        unsafe { std::slice::from_raw_parts_mut(self.radius, self.count) }
+    }
+
+    /// Vista inmutable (compartida, solo lectura) sobre el canal FreeList.
+    pub fn free_list_slice(&self) -> &[i32] {
+        unsafe { std::slice::from_raw_parts(self.free_list, self.count) }
+    }
+
+    /// Vista exclusiva (lectura/escritura) sobre el canal FreeList.
+    pub fn free_list_slice_mut(&mut self) -> &mut [i32] {
+        unsafe { std::slice::from_raw_parts_mut(self.free_list, self.count) }
+    }
+
+    /// Vista inmutable (compartida, solo lectura) sobre el canal LiveIndices.
+    pub fn live_indices_slice(&self) -> &[i32] {
+        unsafe { std::slice::from_raw_parts(self.live_indices, self.count) }
+    }
+
+    /// Vista exclusiva (lectura/escritura) sobre el canal LiveIndices.
+    pub fn live_indices_slice_mut(&mut self) -> &mut [i32] {
+        unsafe { std::slice::from_raw_parts_mut(self.live_indices, self.count) }
+    }
+
+    /// Vista inmutable (compartida, solo lectura) sobre el canal LivePos.
+    pub fn live_pos_slice(&self) -> &[i32] {
+        unsafe { std::slice::from_raw_parts(self.live_pos, self.count) }
+    }
+
+    /// Vista exclusiva (lectura/escritura) sobre el canal LivePos.
+    pub fn live_pos_slice_mut(&mut self) -> &mut [i32] {
+        unsafe { std::slice::from_raw_parts_mut(self.live_pos, self.count) }
+    }
+
+    /// Todas las vistas mutables (lectura/escritura) sobre los canales del
+    /// store, obtenidas con un único `&mut self`. Útil para kernels que escriben
+    /// varios canales en un mismo bucle (siembra, reflejo de bordes). La división
+    /// interna usa punteros crudos sobre regiones de memoria disjuntas, por lo
+    /// que es segura y no tiene coste en tiempo de ejecución.
+    pub fn channels_mut(&mut self) -> ChannelsMut<'_> {
+        let count = self.count;
+        ChannelsMut {
+            x: unsafe { std::slice::from_raw_parts_mut(self.x, count) },
+            y: unsafe { std::slice::from_raw_parts_mut(self.y, count) },
+            vx: unsafe { std::slice::from_raw_parts_mut(self.vx, count) },
+            vy: unsafe { std::slice::from_raw_parts_mut(self.vy, count) },
+            fx: unsafe { std::slice::from_raw_parts_mut(self.fx, count) },
+            fy: unsafe { std::slice::from_raw_parts_mut(self.fy, count) },
+            mass: unsafe { std::slice::from_raw_parts_mut(self.mass, count) },
+            radius: unsafe { std::slice::from_raw_parts_mut(self.radius, count) },
+            generation: unsafe {
+                std::slice::from_raw_parts_mut(self.generation, count)
+            },
+            free_list: unsafe {
+                std::slice::from_raw_parts_mut(self.free_list, count)
+            },
+            live_indices: unsafe {
+                std::slice::from_raw_parts_mut(self.live_indices, count)
+            },
+            live_pos: unsafe {
+                std::slice::from_raw_parts_mut(self.live_pos, count)
+            },
+            body_next: unsafe {
+                std::slice::from_raw_parts_mut(self.body_next, count)
+            },
         }
     }
+}
+
+/// Vistas mutables sobre todos los canales de `NativeStore`, tomadas con un
+/// único `&mut self`. Cada campo es un `&mut [T]` sobre su canal; al apuntar a
+/// regiones de memoria disjuntas no existe aliasing entre ellos.
+pub struct ChannelsMut<'a> {
+    pub x: &'a mut [f32],
+    pub y: &'a mut [f32],
+    pub vx: &'a mut [f32],
+    pub vy: &'a mut [f32],
+    pub fx: &'a mut [f32],
+    pub fy: &'a mut [f32],
+    pub mass: &'a mut [f32],
+    pub radius: &'a mut [f32],
+    pub generation: &'a mut [i32],
+    pub free_list: &'a mut [i32],
+    pub live_indices: &'a mut [i32],
+    pub live_pos: &'a mut [i32],
+    pub body_next: &'a mut [i32],
 }
 
 impl Drop for NativeStore {
@@ -327,21 +326,6 @@ impl Drop for NativeStore {
         self.live_pos = std::ptr::null_mut();
         self.body_next = std::ptr::null_mut();
         self.count = 0;
-        self.slice_count = 0;
-        // Invalidar las cachés: los punteros base ya no son válidos.
-        self.x_cache = dangling_f32_slice();
-        self.y_cache = dangling_f32_slice();
-        self.vx_cache = dangling_f32_slice();
-        self.vy_cache = dangling_f32_slice();
-        self.fx_cache = dangling_f32_slice();
-        self.fy_cache = dangling_f32_slice();
-        self.mass_cache = dangling_f32_slice();
-        self.radius_cache = dangling_f32_slice();
-        self.generation_cache = dangling_i32_slice();
-        self.free_list_cache = dangling_i32_slice();
-        self.live_indices_cache = dangling_i32_slice();
-        self.live_pos_cache = dangling_i32_slice();
-        self.body_next_cache = dangling_i32_slice();
         self.live_count = 0;
         self.free_head = -1;
         self.byte_alignment = 0;
@@ -378,56 +362,61 @@ mod tests {
         let mut store = NativeStore::new(n).expect("store creation failed");
         store.init_lifecycle();
 
-        // Primera vista (materializada desde la caché de `new`).
+        // Primera vista: escritura vía slice visible por el puntero crudo.
         let (ptr, len) = {
-            let s1 = store.x_slice();
+            let s1 = store.x_slice_mut();
             assert_eq!(s1.len(), n, "len debe ser igual a count");
-            // Corrección: escritura vía slice visible por el puntero crudo.
             s1[3] = 42.0;
-            assert_eq!(unsafe { *store.x.add(3) }, 42.0, "slice y canal deben compartir memoria");
+            assert_eq!(unsafe { *s1.as_ptr().add(3) }, 42.0, "slice y canal deben compartir memoria");
             (s1.as_ptr(), s1.len())
-        };
+        }; // s1 se descarta aquí; el borrow de &mut store termina.
 
-        // Segunda llamada: misma vista cacheada (puntero y longitud estables).
+        // Segunda llamada: mismo puntero y longitud (reconstrucción al vuelo es estable).
         let s2 = store.x_slice();
-        assert_eq!(s2.as_ptr(), ptr, "el puntero debe ser estable entre llamadas (caché)");
-        assert_eq!(s2.len(), len, "len debe ser estable entre llamadas (caché)");
+        assert_eq!(s2.as_ptr(), ptr, "el puntero debe ser estable entre llamadas");
+        assert_eq!(s2.len(), len, "len debe ser estable entre llamadas");
         assert_eq!(s2[3], 42.0, "la escritura vía slice debe persistir en el canal");
+        let _ = s2;
 
         // Corrección inversa: escritura por puntero crudo visible vía slice.
         unsafe { *store.x.add(5) = -1.5; }
-        assert_eq!(store.x_slice()[5], -1.5, "escritura cruda debe ser visible vía slice");
+        let s3 = store.x_slice();
+        assert_eq!(s3[5], -1.5, "escritura cruda debe ser visible vía slice");
     }
 
     #[test]
-    fn todas_las_vistas_comparten_la_cache_del_canal() {
+    fn todas_las_vistas_apuntan_a_su_canal() {
         let n = 4;
         let mut store = NativeStore::new(n).expect("store creation failed");
         store.init_lifecycle();
 
-        // Cada vista cacheada apunta a SU canal y tiene longitud `count`.
-        let xs = store.x_slice();
-        assert_eq!(xs.as_ptr(), store.x as *const f32);
-        assert_eq!(xs.len(), n);
-        let ys = store.y_slice();
-        assert_eq!(ys.as_ptr(), store.y as *const f32);
-        assert_eq!(ys.len(), n);
-        let masses = store.mass_slice();
-        assert_eq!(masses.as_ptr(), store.mass as *const f32);
-        let gens = store.generation_slice();
-        assert_eq!(gens.as_ptr(), store.generation as *const i32);
-        let fl = store.free_list_slice();
-        assert_eq!(fl.as_ptr(), store.free_list as *const i32);
-        let li = store.live_indices_slice();
-        assert_eq!(li.as_ptr(), store.live_indices as *const i32);
-        let lp = store.live_pos_slice();
-        assert_eq!(lp.as_ptr(), store.live_pos as *const i32);
-        assert_eq!(li[2], 2, "live_indices identidad tras init_lifecycle");
-        assert_eq!(lp[2], 2, "live_pos identidad tras init_lifecycle");
+        // `*_slice(&self)` devuelve vistas compartidas &[T] (coexisten entre sí);
+        // `*_slice_mut(&mut self)` es la vista exclusiva. Todas apuntan al canal
+        // correspondiente sin copiar.
+        macro_rules! check_slice {
+            ($slice:expr, $ptr:expr, $len:expr) => {{
+                let s = $slice;
+                assert_eq!(s.as_ptr(), $ptr as *const _);
+                assert_eq!(s.len(), $len);
+            }};
+        }
+
+        check_slice!(store.x_slice(), store.x, n);
+        check_slice!(store.y_slice(), store.y, n);
+        check_slice!(store.mass_slice(), store.mass, n);
+        check_slice!(store.generation_slice(), store.generation, n);
+        check_slice!(store.free_list_slice(), store.free_list, n);
+        check_slice!(store.live_indices_slice(), store.live_indices, n);
+        check_slice!(store.live_pos_slice(), store.live_pos, n);
+
+        unsafe {
+            assert_eq!(*store.live_indices.add(2), 2, "live_indices identidad tras init_lifecycle");
+            assert_eq!(*store.live_pos.add(2), 2, "live_pos identidad tras init_lifecycle");
+        }
     }
 
     #[test]
-    #[ignore = "medición de rendimiento: comparar TIMING antes/después del caché"]
+    #[ignore = "medición de rendimiento: reconstrucción al vuelo por llamada"]
     fn timing_x_slice_100k() {
         use std::hint::black_box;
         use std::time::Instant;

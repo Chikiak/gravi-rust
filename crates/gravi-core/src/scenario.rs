@@ -177,40 +177,38 @@ pub fn load_scenario(path: &Path) -> Result<NativeStore, String> {
     }
     let mut store = NativeStore::new(body_count).map_err(|e| e.to_string())?;
 
-    let x = store.x_slice();
-    let y = store.y_slice();
-    let vx = store.vx_slice();
-    let vy = store.vy_slice();
+    let c = store.channels_mut();
     let mut off = 4usize;
     for i in 0..body_count {
         let v = read_f32_le(&body[off..off + 4])?;
         if !v.is_finite() {
             return Err(format!("x[{}] no es finito (NaN/Inf)", i));
         }
-        x[i] = v;
+        c.x[i] = v;
         off += 4;
 
         let v = read_f32_le(&body[off..off + 4])?;
         if !v.is_finite() {
             return Err(format!("y[{}] no es finito (NaN/Inf)", i));
         }
-        y[i] = v;
+        c.y[i] = v;
         off += 4;
 
         let v = read_f32_le(&body[off..off + 4])?;
         if !v.is_finite() {
             return Err(format!("vx[{}] no es finito (NaN/Inf)", i));
         }
-        vx[i] = v;
+        c.vx[i] = v;
         off += 4;
 
         let v = read_f32_le(&body[off..off + 4])?;
         if !v.is_finite() {
             return Err(format!("vy[{}] no es finito (NaN/Inf)", i));
         }
-        vy[i] = v;
+        c.vy[i] = v;
         off += 4;
     }
+    drop(c);
     store.live_count = body_count;
     Ok(store)
 }

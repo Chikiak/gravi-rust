@@ -58,14 +58,15 @@ fn bruto_esperado(
 #[test]
 fn b7_theta_cero_coincide_con_fuerza_bruta() {
     let mut store = make_store(5);
-    store.x_slice()[0] = 10.0; store.y_slice()[0] = 10.0; store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 90.0; store.y_slice()[1] = 90.0; store.mass_slice()[1] = 2.0;
-    store.x_slice()[2] = 10.0; store.y_slice()[2] = 90.0; store.mass_slice()[2] = 3.0;
-    store.x_slice()[3] = 90.0; store.y_slice()[3] = 10.0; store.mass_slice()[3] = 4.0;
-    store.x_slice()[4] = 50.0; store.y_slice()[4] = 50.0; store.mass_slice()[4] = 5.0;
+    store.x_slice_mut()[0] = 10.0; store.y_slice_mut()[0] = 10.0; store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 90.0; store.y_slice_mut()[1] = 90.0; store.mass_slice_mut()[1] = 2.0;
+    store.x_slice_mut()[2] = 10.0; store.y_slice_mut()[2] = 90.0; store.mass_slice_mut()[2] = 3.0;
+    store.x_slice_mut()[3] = 90.0; store.y_slice_mut()[3] = 10.0; store.mass_slice_mut()[3] = 4.0;
+    store.x_slice_mut()[4] = 50.0; store.y_slice_mut()[4] = 50.0; store.mass_slice_mut()[4] = 5.0;
     store.live_count = 5;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     for i in 0..5usize { li[i] = i as i32; }
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     assert!(build_quadtree(&store, &mut arena, 50.0, 50.0, 100.0).is_ok());
@@ -99,15 +100,16 @@ fn b7_theta_positivo_error_acotado() {
     let mut i = 0usize;
     while i < 60usize {
         // Cuerpos separados en una rejilla para evitar celdas unitarias profundas.
-        store.x_slice()[i] = ((i % 10) as f32) * 11.0 + 2.0;
-        store.y_slice()[i] = ((i / 10) as f32) * 11.0 + 2.0;
-        store.mass_slice()[i] = 1.0 + (i as f32) * 0.13;
+        store.x_slice_mut()[i] = ((i % 10) as f32) * 11.0 + 2.0;
+        store.y_slice_mut()[i] = ((i / 10) as f32) * 11.0 + 2.0;
+        store.mass_slice_mut()[i] = 1.0 + (i as f32) * 0.13;
         i += 1;
     }
     store.live_count = 60;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     i = 0;
     while i < 60usize { li[i] = i as i32; i += 1; }
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(256).unwrap();
     assert!(build_quadtree(&store, &mut arena, 50.0, 50.0, 60.0).is_ok());
@@ -148,15 +150,16 @@ fn b7_cluster_degenerado_sin_nan() {
     let mut store = make_store(12);
     let mut i = 0usize;
     while i < 12usize {
-        store.x_slice()[i] = 5.0 + (i as f32) * 0.001;
-        store.y_slice()[i] = 5.0 + (i as f32) * 0.001;
-        store.mass_slice()[i] = 1.0;
+        store.x_slice_mut()[i] = 5.0 + (i as f32) * 0.001;
+        store.y_slice_mut()[i] = 5.0 + (i as f32) * 0.001;
+        store.mass_slice_mut()[i] = 1.0;
         i += 1;
     }
     store.live_count = 12;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     i = 0;
     while i < 12usize { li[i] = i as i32; i += 1; }
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(256).unwrap();
     let (cx, cy, half) = root_from_live_bodies(&store);
@@ -206,13 +209,14 @@ fn quadtree_leaf_multi_fuerza_igual_bruto() {
     let n = 4usize;
     let mut store = make_store(n);
     // Cuerpos 0,1,2 en la misma posición (50,50); cuerpo 3 en (200,200) externo.
-    store.x_slice()[0] = 50.0; store.y_slice()[0] = 50.0; store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 50.0; store.y_slice()[1] = 50.0; store.mass_slice()[1] = 2.0;
-    store.x_slice()[2] = 50.0; store.y_slice()[2] = 50.0; store.mass_slice()[2] = 3.0;
-    store.x_slice()[3] = 200.0; store.y_slice()[3] = 200.0; store.mass_slice()[3] = 5.0;
+    store.x_slice_mut()[0] = 50.0; store.y_slice_mut()[0] = 50.0; store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 50.0; store.y_slice_mut()[1] = 50.0; store.mass_slice_mut()[1] = 2.0;
+    store.x_slice_mut()[2] = 50.0; store.y_slice_mut()[2] = 50.0; store.mass_slice_mut()[2] = 3.0;
+    store.x_slice_mut()[3] = 200.0; store.y_slice_mut()[3] = 200.0; store.mass_slice_mut()[3] = 5.0;
     store.live_count = n;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0; li[1] = 1; li[2] = 2; li[3] = 3;
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     // Celda pequeña (half=1.0 < MIN_CELL_SIZE=2.0) -> no subdivide -> LeafMulti.
@@ -270,20 +274,21 @@ fn leafbucket_masa_count_correctos() {
     // Con half=1.0 < MIN_CELL_SIZE=2.0 no se subdivide -> root es LeafMulti (kind=3).
     let n = 3usize;
     let mut store = make_store(n);
-    store.x_slice()[0] = 50.0;
-    store.y_slice()[0] = 50.0;
-    store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 50.0;
-    store.y_slice()[1] = 50.0;
-    store.mass_slice()[1] = 2.0;
-    store.x_slice()[2] = 50.0;
-    store.y_slice()[2] = 50.0;
-    store.mass_slice()[2] = 3.0;
+    store.x_slice_mut()[0] = 50.0;
+    store.y_slice_mut()[0] = 50.0;
+    store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 50.0;
+    store.y_slice_mut()[1] = 50.0;
+    store.mass_slice_mut()[1] = 2.0;
+    store.x_slice_mut()[2] = 50.0;
+    store.y_slice_mut()[2] = 50.0;
+    store.mass_slice_mut()[2] = 3.0;
     store.live_count = n;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0;
     li[1] = 1;
     li[2] = 2;
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     assert!(
@@ -304,24 +309,25 @@ fn leafbucket_fuerza_equivale_brute_con_cuerpos_coincidentes() {
     // Fuerza sobre cuerpo 3 debe igualar fuerza bruta sobre cuerpos 0, 1 (theta=0 exacto).
     let n = 4usize;
     let mut store = make_store(n);
-    store.x_slice()[0] = 50.0;
-    store.y_slice()[0] = 50.0;
-    store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 50.0;
-    store.y_slice()[1] = 50.0;
-    store.mass_slice()[1] = 2.0;
-    store.x_slice()[2] = 999.0;
-    store.y_slice()[2] = 999.0;
-    store.mass_slice()[2] = 0.0; // inerte, no aporta fuerza
-    store.x_slice()[3] = 200.0;
-    store.y_slice()[3] = 200.0;
-    store.mass_slice()[3] = 5.0;
+    store.x_slice_mut()[0] = 50.0;
+    store.y_slice_mut()[0] = 50.0;
+    store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 50.0;
+    store.y_slice_mut()[1] = 50.0;
+    store.mass_slice_mut()[1] = 2.0;
+    store.x_slice_mut()[2] = 999.0;
+    store.y_slice_mut()[2] = 999.0;
+    store.mass_slice_mut()[2] = 0.0; // inerte, no aporta fuerza
+    store.x_slice_mut()[3] = 200.0;
+    store.y_slice_mut()[3] = 200.0;
+    store.mass_slice_mut()[3] = 5.0;
     store.live_count = n;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0;
     li[1] = 1;
     li[2] = 2;
     li[3] = 3;
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     assert!(
@@ -382,18 +388,19 @@ fn leafbucket_arena_no_desborda_con_cascada_coincidentes() {
     let mut store = make_store(n);
     let mut i = 0usize;
     while i < n {
-        store.x_slice()[i] = 50.0;
-        store.y_slice()[i] = 50.0;
-        store.mass_slice()[i] = 1.0;
+        store.x_slice_mut()[i] = 50.0;
+        store.y_slice_mut()[i] = 50.0;
+        store.mass_slice_mut()[i] = 1.0;
         i += 1;
     }
     store.live_count = n;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     i = 0;
     while i < n {
         li[i] = i as i32;
         i += 1;
     }
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     assert!(
@@ -423,24 +430,25 @@ fn leafmulti_live_indices_no_consecutivos_masa_count() {
     // A1: live_indices es una permutación NO identidad (slots no consecutivos),
     // root LeafMulti con count y masa correctos, cadena body_next bien enlazada.
     let mut store = make_store(4);
-    store.x_slice()[0] = 50.0;
-    store.y_slice()[0] = 50.0;
-    store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 50.0;
-    store.y_slice()[1] = 50.0;
-    store.mass_slice()[1] = 2.0;
-    store.x_slice()[2] = 50.0;
-    store.y_slice()[2] = 50.0;
-    store.mass_slice()[2] = 3.0;
-    store.x_slice()[3] = 200.0;
-    store.y_slice()[3] = 200.0;
-    store.mass_slice()[3] = 5.0;
+    store.x_slice_mut()[0] = 50.0;
+    store.y_slice_mut()[0] = 50.0;
+    store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 50.0;
+    store.y_slice_mut()[1] = 50.0;
+    store.mass_slice_mut()[1] = 2.0;
+    store.x_slice_mut()[2] = 50.0;
+    store.y_slice_mut()[2] = 50.0;
+    store.mass_slice_mut()[2] = 3.0;
+    store.x_slice_mut()[3] = 200.0;
+    store.y_slice_mut()[3] = 200.0;
+    store.mass_slice_mut()[3] = 5.0;
     store.live_count = 4;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 2;
     li[1] = 0;
     li[2] = 1;
     li[3] = 3;
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     assert!(
@@ -470,24 +478,25 @@ fn leafmulti_live_indices_no_consecutivos_masa_count() {
 fn leafmulti_live_indices_no_consecutivos_fuerza_igual_bruto() {
     // A2: misma permutación; fuerza BH (theta=0) == fuerza bruta para cada cuerpo vivo.
     let mut store = make_store(4);
-    store.x_slice()[0] = 50.0;
-    store.y_slice()[0] = 50.0;
-    store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 50.0;
-    store.y_slice()[1] = 50.0;
-    store.mass_slice()[1] = 2.0;
-    store.x_slice()[2] = 50.0;
-    store.y_slice()[2] = 50.0;
-    store.mass_slice()[2] = 3.0;
-    store.x_slice()[3] = 200.0;
-    store.y_slice()[3] = 200.0;
-    store.mass_slice()[3] = 5.0;
+    store.x_slice_mut()[0] = 50.0;
+    store.y_slice_mut()[0] = 50.0;
+    store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 50.0;
+    store.y_slice_mut()[1] = 50.0;
+    store.mass_slice_mut()[1] = 2.0;
+    store.x_slice_mut()[2] = 50.0;
+    store.y_slice_mut()[2] = 50.0;
+    store.mass_slice_mut()[2] = 3.0;
+    store.x_slice_mut()[3] = 200.0;
+    store.y_slice_mut()[3] = 200.0;
+    store.mass_slice_mut()[3] = 5.0;
     store.live_count = 4;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 2;
     li[1] = 0;
     li[2] = 1;
     li[3] = 3;
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     assert!(
@@ -551,23 +560,24 @@ fn leafmulti_live_indices_no_consecutivos_fuerza_igual_bruto() {
 fn leafmulti_no_incluye_cuerpo_ajeno_del_rango() {
     // B: slot 1 no vive (fuera de live_indices) y no debe aportar masa ni fuerza.
     let mut store = make_store(4);
-    store.x_slice()[0] = 50.0;
-    store.y_slice()[0] = 50.0;
-    store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 9999.0;
-    store.y_slice()[1] = 9999.0;
-    store.mass_slice()[1] = 100.0;
-    store.x_slice()[2] = 50.0;
-    store.y_slice()[2] = 50.0;
-    store.mass_slice()[2] = 3.0;
-    store.x_slice()[3] = 200.0;
-    store.y_slice()[3] = 200.0;
-    store.mass_slice()[3] = 5.0;
+    store.x_slice_mut()[0] = 50.0;
+    store.y_slice_mut()[0] = 50.0;
+    store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 9999.0;
+    store.y_slice_mut()[1] = 9999.0;
+    store.mass_slice_mut()[1] = 100.0;
+    store.x_slice_mut()[2] = 50.0;
+    store.y_slice_mut()[2] = 50.0;
+    store.mass_slice_mut()[2] = 3.0;
+    store.x_slice_mut()[3] = 200.0;
+    store.y_slice_mut()[3] = 200.0;
+    store.mass_slice_mut()[3] = 5.0;
     store.live_count = 3;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0;
     li[1] = 2;
     li[2] = 3;
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(64).unwrap();
     assert!(
@@ -627,22 +637,26 @@ fn leaf_multi_monopolo_lejano_theta_positivo() {
     let mut store = make_store(N + 1);
     let mut i = 0usize;
     while i < N {
-        store.x_slice()[i] = 50.0;
-        store.y_slice()[i] = 50.0;
-        store.mass_slice()[i] = 1.0;
+        // Núcleo coincidente desplazado del centro geométrico del nodo (50,50)
+        // pero dentro de la celda [49,51] x [49,51], para que el test distinga
+        // el monopolo (usa centro (50,50)) de la cadena exacta (usa (49.1,49.3)).
+        store.x_slice_mut()[i] = 49.1;
+        store.y_slice_mut()[i] = 49.3;
+        store.mass_slice_mut()[i] = 1.0;
         i += 1;
     }
     // Cuerpo 200 alejado, masa 0 (inerte: no aporta masa al nodo hoja).
-    store.x_slice()[N] = 1000.0;
-    store.y_slice()[N] = 1000.0;
-    store.mass_slice()[N] = 0.0;
+    store.x_slice_mut()[N] = 1000.0;
+    store.y_slice_mut()[N] = 1000.0;
+    store.mass_slice_mut()[N] = 0.0;
     store.live_count = N + 1;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     i = 0;
     while i < N + 1 {
         li[i] = i as i32;
         i += 1;
     }
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(256).unwrap();
     assert!(
@@ -669,7 +683,8 @@ fn leaf_multi_monopolo_lejano_theta_positivo() {
         let fy = store.fy;
         let ix = *store.x.add(N);
         let iy = *store.y.add(N);
-        // Monopolo analítico: M=200 en (50,50) sobre el cuerpo en (1000,1000).
+        // Monopolo analítico: M=200 en el centro geométrico del nodo (50,50)
+        // sobre el cuerpo en (1000,1000).
         let dx = 50.0f32 - ix;
         let dy = 50.0f32 - iy;
         let d2 = dx * dx + dy * dy;
@@ -699,22 +714,23 @@ fn leaf_multi_cerca_cadena_exacta() {
     let mut store = make_store(N + 1);
     let mut i = 0usize;
     while i < N {
-        store.x_slice()[i] = 50.0;
-        store.y_slice()[i] = 50.0;
-        store.mass_slice()[i] = 1.0;
+        store.x_slice_mut()[i] = 50.0;
+        store.y_slice_mut()[i] = 50.0;
+        store.mass_slice_mut()[i] = 1.0;
         i += 1;
     }
     // Cuerpo 200 dentro/borde de la celda (50.5, 50.5).
-    store.x_slice()[N] = 50.5;
-    store.y_slice()[N] = 50.5;
-    store.mass_slice()[N] = 1.0;
+    store.x_slice_mut()[N] = 50.5;
+    store.y_slice_mut()[N] = 50.5;
+    store.mass_slice_mut()[N] = 1.0;
     store.live_count = N + 1;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     i = 0;
     while i < N + 1 {
         li[i] = i as i32;
         i += 1;
     }
+    let _ = li;
 
     let mut arena = QuadtreeArena::allocate(256).unwrap();
     assert!(

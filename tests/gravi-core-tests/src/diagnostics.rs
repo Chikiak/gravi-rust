@@ -11,47 +11,40 @@ use gravi_core::store::NativeStore;
 fn store_two_bodies() -> NativeStore {
     let mut store = NativeStore::new(2).unwrap();
     store.init_lifecycle();
-    let mass = store.mass_slice();
-    mass[0] = 1.0;
-    mass[1] = 1.0;
+    store.mass_slice_mut()[0] = 1.0;
+    store.mass_slice_mut()[1] = 1.0;
     store
 }
 
 #[test]
 fn ac_kinetic_energy_two_bodies_unit_speed() {
-    let store = store_two_bodies();
-    let vx = store.vx_slice();
-    let vy = store.vy_slice();
-    vx[0] = 1.0;
-    vy[0] = 0.0;
-    vx[1] = 1.0;
-    vy[1] = 0.0;
+    let mut store = store_two_bodies();
+    store.vx_slice_mut()[0] = 1.0;
+    store.vy_slice_mut()[0] = 0.0;
+    store.vx_slice_mut()[1] = 1.0;
+    store.vy_slice_mut()[1] = 0.0;
     let ke = kinetic_energy(&store).unwrap();
     assert!((ke - 1.0).abs() < 1e-4, "ke={}", ke);
 }
 
 #[test]
 fn ac_potential_energy_is_negative() {
-    let store = store_two_bodies();
-    let x = store.x_slice();
-    let y = store.y_slice();
-    x[0] = 0.0;
-    y[0] = 0.0;
-    x[1] = 1.0;
-    y[1] = 0.0;
+    let mut store = store_two_bodies();
+    store.x_slice_mut()[0] = 0.0;
+    store.y_slice_mut()[0] = 0.0;
+    store.x_slice_mut()[1] = 1.0;
+    store.y_slice_mut()[1] = 0.0;
     let pe = potential_energy(&store).unwrap();
     assert!(pe < 0.0, "pe={} (esperada negativa)", pe);
 }
 
 #[test]
 fn ac_linear_momentum_two_body_opposing_approx_zero() {
-    let store = store_two_bodies();
-    let vx = store.vx_slice();
-    let vy = store.vy_slice();
-    vx[0] = 1.0;
-    vy[0] = 0.0;
-    vx[1] = -1.0;
-    vy[1] = 0.0;
+    let mut store = store_two_bodies();
+    store.vx_slice_mut()[0] = 1.0;
+    store.vy_slice_mut()[0] = 0.0;
+    store.vx_slice_mut()[1] = -1.0;
+    store.vy_slice_mut()[1] = 0.0;
     let (px, py) = linear_momentum(&store).unwrap();
     assert!(px.abs() < 1e-4, "px={}", px);
     assert_eq!(py, 0.0);
@@ -59,13 +52,11 @@ fn ac_linear_momentum_two_body_opposing_approx_zero() {
 
 #[test]
 fn ac_center_of_mass_two_equal_bodies() {
-    let store = store_two_bodies();
-    let x = store.x_slice();
-    let y = store.y_slice();
-    x[0] = 0.0;
-    y[0] = 0.0;
-    x[1] = 2.0;
-    y[1] = 0.0;
+    let mut store = store_two_bodies();
+    store.x_slice_mut()[0] = 0.0;
+    store.y_slice_mut()[0] = 0.0;
+    store.x_slice_mut()[1] = 2.0;
+    store.y_slice_mut()[1] = 0.0;
     let (cmx, cmy) = center_of_mass(&store).unwrap();
     assert!((cmx - 1.0).abs() < 1e-4, "cmx={}", cmx);
     assert_eq!(cmy, 0.0);
@@ -81,10 +72,9 @@ fn ac_calculate_flops_per_frame_n_squared_times_12() {
 
 #[test]
 fn ac_compute_diagnostics_aggregates_all_fields() {
-    let store = store_two_bodies();
-    let vx = store.vx_slice();
-    vx[0] = 1.0;
-    vx[1] = -1.0;
+    let mut store = store_two_bodies();
+    store.vx_slice_mut()[0] = 1.0;
+    store.vx_slice_mut()[1] = -1.0;
     let d = compute_diagnostics(&store).unwrap();
     assert!((d.kinetic_energy - 1.0).abs() < 1e-4);
     assert!(d.potential_energy < 0.0);
@@ -99,11 +89,10 @@ fn ac_compute_diagnostics_aggregates_all_fields() {
 fn store_three_live_one_dead() -> NativeStore {
     let mut store = NativeStore::new(4).unwrap();
     store.init_lifecycle();
-    let mass = store.mass_slice();
-    mass[0] = 1.0;
-    mass[1] = 1.0;
-    mass[2] = 1.0;
-    mass[3] = -1.0; // cuerpo muerto
+    store.mass_slice_mut()[0] = 1.0;
+    store.mass_slice_mut()[1] = 1.0;
+    store.mass_slice_mut()[2] = 1.0;
+    store.mass_slice_mut()[3] = -1.0; // cuerpo muerto
     store
 }
 
@@ -111,29 +100,31 @@ fn store_three_live_one_dead() -> NativeStore {
 fn store_three_live() -> NativeStore {
     let mut store = NativeStore::new(3).unwrap();
     store.init_lifecycle();
-    let mass = store.mass_slice();
-    mass[0] = 1.0;
-    mass[1] = 1.0;
-    mass[2] = 1.0;
+    store.mass_slice_mut()[0] = 1.0;
+    store.mass_slice_mut()[1] = 1.0;
+    store.mass_slice_mut()[2] = 1.0;
     store
 }
 
 #[test]
 fn ke_excluye_cuerpo_muerto() {
-    let store_dead = store_three_live_one_dead();
-    let vx = store_dead.vx_slice();
-    let vy = store_dead.vy_slice();
-    vx[0] = 1.0; vy[0] = 0.0;
-    vx[1] = 1.0; vy[1] = 0.0;
-    vx[2] = 1.0; vy[2] = 0.0;
-    vx[3] = 99.0; vy[3] = 99.0; // muerto, no debe contar
+    let mut store_dead = store_three_live_one_dead();
+    store_dead.vx_slice_mut()[0] = 1.0;
+    store_dead.vy_slice_mut()[0] = 0.0;
+    store_dead.vx_slice_mut()[1] = 1.0;
+    store_dead.vy_slice_mut()[1] = 0.0;
+    store_dead.vx_slice_mut()[2] = 1.0;
+    store_dead.vy_slice_mut()[2] = 0.0;
+    store_dead.vx_slice_mut()[3] = 99.0;
+    store_dead.vy_slice_mut()[3] = 99.0; // muerto, no debe contar
 
-    let store_control = store_three_live();
-    let vx_c = store_control.vx_slice();
-    let vy_c = store_control.vy_slice();
-    vx_c[0] = 1.0; vy_c[0] = 0.0;
-    vx_c[1] = 1.0; vy_c[1] = 0.0;
-    vx_c[2] = 1.0; vy_c[2] = 0.0;
+    let mut store_control = store_three_live();
+    store_control.vx_slice_mut()[0] = 1.0;
+    store_control.vy_slice_mut()[0] = 0.0;
+    store_control.vx_slice_mut()[1] = 1.0;
+    store_control.vy_slice_mut()[1] = 0.0;
+    store_control.vx_slice_mut()[2] = 1.0;
+    store_control.vy_slice_mut()[2] = 0.0;
 
     let ke_dead = kinetic_energy(&store_dead).unwrap();
     let ke_control = kinetic_energy(&store_control).unwrap();
@@ -143,13 +134,15 @@ fn ke_excluye_cuerpo_muerto() {
 
 #[test]
 fn pe_aplica_softening_y_excluye_muerto() {
-    let store_dead = store_three_live_one_dead();
-    let x = store_dead.x_slice();
-    let y = store_dead.y_slice();
-    x[0] = 0.0; y[0] = 0.0;
-    x[1] = 1.0; y[1] = 0.0;
-    x[2] = 2.0; y[2] = 0.0;
-    x[3] = 999.0; y[3] = 999.0; // muerto
+    let mut store_dead = store_three_live_one_dead();
+    store_dead.x_slice_mut()[0] = 0.0;
+    store_dead.y_slice_mut()[0] = 0.0;
+    store_dead.x_slice_mut()[1] = 1.0;
+    store_dead.y_slice_mut()[1] = 0.0;
+    store_dead.x_slice_mut()[2] = 2.0;
+    store_dead.y_slice_mut()[2] = 0.0;
+    store_dead.x_slice_mut()[3] = 999.0;
+    store_dead.y_slice_mut()[3] = 999.0; // muerto
 
     // Referencia f64 con r2 + 64.0, G = 1500.0, masas = 1.0
     let g: f64 = 1500.0;
@@ -169,32 +162,36 @@ fn pe_aplica_softening_y_excluye_muerto() {
     assert!((pe_dead as f64 - expected).abs() < 1e-3, "pe_dead={} expected={}", pe_dead, expected);
 
     // Insertar cuerpo muerto entre vivos no cambia el valor.
-    let store_control = store_three_live();
-    let x_c = store_control.x_slice();
-    let y_c = store_control.y_slice();
-    x_c[0] = 0.0; y_c[0] = 0.0;
-    x_c[1] = 1.0; y_c[1] = 0.0;
-    x_c[2] = 2.0; y_c[2] = 0.0;
+    let mut store_control = store_three_live();
+    store_control.x_slice_mut()[0] = 0.0;
+    store_control.y_slice_mut()[0] = 0.0;
+    store_control.x_slice_mut()[1] = 1.0;
+    store_control.y_slice_mut()[1] = 0.0;
+    store_control.x_slice_mut()[2] = 2.0;
+    store_control.y_slice_mut()[2] = 0.0;
     let pe_control = potential_energy(&store_control).unwrap();
     assert!((pe_dead - pe_control).abs() < 1e-4, "pe_dead={} pe_control={}", pe_dead, pe_control);
 }
 
 #[test]
 fn momento_excluye_cuerpo_muerto() {
-    let store_dead = store_three_live_one_dead();
-    let vx = store_dead.vx_slice();
-    let vy = store_dead.vy_slice();
-    vx[0] = 1.0; vy[0] = 0.0;
-    vx[1] = -1.0; vy[1] = 0.0;
-    vx[2] = 0.0; vy[2] = 1.0;
-    vx[3] = 50.0; vy[3] = -50.0; // muerto
+    let mut store_dead = store_three_live_one_dead();
+    store_dead.vx_slice_mut()[0] = 1.0;
+    store_dead.vy_slice_mut()[0] = 0.0;
+    store_dead.vx_slice_mut()[1] = -1.0;
+    store_dead.vy_slice_mut()[1] = 0.0;
+    store_dead.vx_slice_mut()[2] = 0.0;
+    store_dead.vy_slice_mut()[2] = 1.0;
+    store_dead.vx_slice_mut()[3] = 50.0;
+    store_dead.vy_slice_mut()[3] = -50.0; // muerto
 
-    let store_control = store_three_live();
-    let vx_c = store_control.vx_slice();
-    let vy_c = store_control.vy_slice();
-    vx_c[0] = 1.0; vy_c[0] = 0.0;
-    vx_c[1] = -1.0; vy_c[1] = 0.0;
-    vx_c[2] = 0.0; vy_c[2] = 1.0;
+    let mut store_control = store_three_live();
+    store_control.vx_slice_mut()[0] = 1.0;
+    store_control.vy_slice_mut()[0] = 0.0;
+    store_control.vx_slice_mut()[1] = -1.0;
+    store_control.vy_slice_mut()[1] = 0.0;
+    store_control.vx_slice_mut()[2] = 0.0;
+    store_control.vy_slice_mut()[2] = 1.0;
 
     let (px_d, py_d) = linear_momentum(&store_dead).unwrap();
     let (px_c, py_c) = linear_momentum(&store_control).unwrap();
@@ -209,28 +206,30 @@ fn com_excluye_muerto_y_umbral_epsilon() {
     // Solo muertos: devuelve (0.0, 0.0) sin panic.
     let mut store_all_dead = NativeStore::new(3).unwrap();
     store_all_dead.init_lifecycle();
-    let mass = store_all_dead.mass_slice();
-    mass[0] = -1.0;
-    mass[1] = -1.0;
-    mass[2] = -1.0;
+    store_all_dead.mass_slice_mut()[0] = -1.0;
+    store_all_dead.mass_slice_mut()[1] = -1.0;
+    store_all_dead.mass_slice_mut()[2] = -1.0;
     let com_dead = center_of_mass(&store_all_dead).unwrap();
     assert_eq!(com_dead, (0.0, 0.0));
 
     // 3 vivos + 1 muerto: igual al control sin muertos.
-    let store_dead = store_three_live_one_dead();
-    let x = store_dead.x_slice();
-    let y = store_dead.y_slice();
-    x[0] = 0.0; y[0] = 0.0;
-    x[1] = 2.0; y[1] = 0.0;
-    x[2] = 4.0; y[2] = 0.0;
-    x[3] = 999.0; y[3] = 999.0; // muerto
+    let mut store_dead = store_three_live_one_dead();
+    store_dead.x_slice_mut()[0] = 0.0;
+    store_dead.y_slice_mut()[0] = 0.0;
+    store_dead.x_slice_mut()[1] = 2.0;
+    store_dead.y_slice_mut()[1] = 0.0;
+    store_dead.x_slice_mut()[2] = 4.0;
+    store_dead.y_slice_mut()[2] = 0.0;
+    store_dead.x_slice_mut()[3] = 999.0;
+    store_dead.y_slice_mut()[3] = 999.0; // muerto
 
-    let store_control = store_three_live();
-    let x_c = store_control.x_slice();
-    let y_c = store_control.y_slice();
-    x_c[0] = 0.0; y_c[0] = 0.0;
-    x_c[1] = 2.0; y_c[1] = 0.0;
-    x_c[2] = 4.0; y_c[2] = 0.0;
+    let mut store_control = store_three_live();
+    store_control.x_slice_mut()[0] = 0.0;
+    store_control.y_slice_mut()[0] = 0.0;
+    store_control.x_slice_mut()[1] = 2.0;
+    store_control.y_slice_mut()[1] = 0.0;
+    store_control.x_slice_mut()[2] = 4.0;
+    store_control.y_slice_mut()[2] = 0.0;
 
     let (cmx_d, cmy_d) = center_of_mass(&store_dead).unwrap();
     let (cmx_c, cmy_c) = center_of_mass(&store_control).unwrap();
@@ -242,24 +241,37 @@ fn com_excluye_muerto_y_umbral_epsilon() {
 
 #[test]
 fn diagnosticos_equivales_control_con_muerto() {
-    let store_dead = store_three_live_one_dead();
-    let vx = store_dead.vx_slice();
-    let vy = store_dead.vy_slice();
-    let x = store_dead.x_slice();
-    let y = store_dead.y_slice();
-    vx[0] = 1.0; vy[0] = 0.0; x[0] = 0.0; y[0] = 0.0;
-    vx[1] = -1.0; vy[1] = 0.0; x[1] = 2.0; y[1] = 0.0;
-    vx[2] = 0.0; vy[2] = 1.0; x[2] = 4.0; y[2] = 0.0;
-    vx[3] = 99.0; vy[3] = -99.0; x[3] = 999.0; y[3] = 999.0; // muerto
+    let mut store_dead = store_three_live_one_dead();
+    store_dead.vx_slice_mut()[0] = 1.0;
+    store_dead.vy_slice_mut()[0] = 0.0;
+    store_dead.x_slice_mut()[0] = 0.0;
+    store_dead.y_slice_mut()[0] = 0.0;
+    store_dead.vx_slice_mut()[1] = -1.0;
+    store_dead.vy_slice_mut()[1] = 0.0;
+    store_dead.x_slice_mut()[1] = 2.0;
+    store_dead.y_slice_mut()[1] = 0.0;
+    store_dead.vx_slice_mut()[2] = 0.0;
+    store_dead.vy_slice_mut()[2] = 1.0;
+    store_dead.x_slice_mut()[2] = 4.0;
+    store_dead.y_slice_mut()[2] = 0.0;
+    store_dead.vx_slice_mut()[3] = 99.0;
+    store_dead.vy_slice_mut()[3] = -99.0;
+    store_dead.x_slice_mut()[3] = 999.0;
+    store_dead.y_slice_mut()[3] = 999.0; // muerto
 
-    let store_control = store_three_live();
-    let vx_c = store_control.vx_slice();
-    let vy_c = store_control.vy_slice();
-    let x_c = store_control.x_slice();
-    let y_c = store_control.y_slice();
-    vx_c[0] = 1.0; vy_c[0] = 0.0; x_c[0] = 0.0; y_c[0] = 0.0;
-    vx_c[1] = -1.0; vy_c[1] = 0.0; x_c[1] = 2.0; y_c[1] = 0.0;
-    vx_c[2] = 0.0; vy_c[2] = 1.0; x_c[2] = 4.0; y_c[2] = 0.0;
+    let mut store_control = store_three_live();
+    store_control.vx_slice_mut()[0] = 1.0;
+    store_control.vy_slice_mut()[0] = 0.0;
+    store_control.x_slice_mut()[0] = 0.0;
+    store_control.y_slice_mut()[0] = 0.0;
+    store_control.vx_slice_mut()[1] = -1.0;
+    store_control.vy_slice_mut()[1] = 0.0;
+    store_control.x_slice_mut()[1] = 2.0;
+    store_control.y_slice_mut()[1] = 0.0;
+    store_control.vx_slice_mut()[2] = 0.0;
+    store_control.vy_slice_mut()[2] = 1.0;
+    store_control.x_slice_mut()[2] = 4.0;
+    store_control.y_slice_mut()[2] = 0.0;
 
     let d_dead = compute_diagnostics(&store_dead).unwrap();
     let d_control = compute_diagnostics(&store_control).unwrap();

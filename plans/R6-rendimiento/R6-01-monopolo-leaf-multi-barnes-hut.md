@@ -151,8 +151,9 @@ configuración.
 - Rama: feat/r6-01-monopolo-leaf-multi-barnes-hut (cortada de main).
 - Cambio en compute_forces_barnes_hut_range (quadtree.rs): rama kind==3 (LeafMulti) evalúa primero el criterio de apertura s² < θ²·d² con s = 2·half_size; si se acepta, un solo término de monopolo con node.mass y centro geométrico; si no, cadena body_next exacta cuerpo a cuerpo (igual que antes). Guarda de masa ≤ 0 igual que nodos internos.
 - Tests nuevos en quadtree_bh.rs: leaf_multi_monopolo_lejano_theta_positivo (AC1) y leaf_multi_cerca_cadena_exacta (AC3).
-- No se tocó build_quadtree, insert_body_iterative, compute_quadtree_masses, QuadNode ni body_next.
+- Desviación registrada: PR #1 también incluyó sobre main la implementación de store.body_next (crates/gravi-core/src/store.rs), su encadenado en crates/gravi-core/src/quadtree.rs y los 3 tests leafmulti_live_indices_* / leafmulti_no_incluye_cuerpo_ajeno_del_rango.
 - No se introdujeron perillas nuevas; se reutiliza θ existente.
 - Cero asignaciones en el hot path (solo punteros crudos, aritmética de enteros, bucles).
+- Medición manual de kt en HUD (escenario 3, 8000 cuerpos, colapsar disco 2-3 min): pendiente de ejecución con GUI antes del cierre de la fase R6.
 - Comandos ejecutados: cargo check --workspace --all-targets (0 errores, 0 warnings); cargo test --release --test quadtree_bh (13/13 ok); cargo test --release --test parallel (4/4 ok); cargo test --release (suite completa verde).
 - AC1 PASS (monopolo lejano, rel < 1e-5); AC2 PASS (θ=0, bruta exacta sin cambios); AC3 PASS (cerca, cadena exacta, rel < 1e-4); AC4 PASS (b7_theta_positivo_error_acotado); AC5 PASS (paralelo bit-idéntico a secuencial); AC6 PASS (check + suite verdes).

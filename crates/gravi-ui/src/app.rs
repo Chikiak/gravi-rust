@@ -500,18 +500,14 @@ impl App {
             ForceEngine::BruteForce => "brute",
             ForceEngine::BarnesHut => "bhut",
         };
-        // Línea 1: solo el motor bruto expone el fallback escalar; los demás
-        // motores mantienen la etiqueta SIMD actual (portable/scalar).
-        let simd_label = match self.force_engine {
-            ForceEngine::BruteForce => hud_line1_label(
-                engine_label,
-                self.store.live_count,
-                self.store.count,
-            ),
-            ForceEngine::BarnesHut => {
-                if self.manual_simd { "portable" } else { "scalar" }
-            }
-        };
+        // Línea 1: `brute` con slots muertos muestra el fallback escalar;
+        // los demás motores mantienen la etiqueta SIMD actual (portable/scalar).
+        let simd_label = hud_line1_label(
+            engine_label,
+            self.manual_simd,
+            self.store.live_count,
+            self.store.count,
+        );
 
         let mflops = self.compute_mflops();
         let n1 = write_line1(
@@ -556,16 +552,16 @@ impl App {
 
 /// Etiqueta de la línea 1 del HUD para el motor de fuerza.
 ///
-/// - `brute` con `live_count == count`: etiqueta SIMD de siempre ("scalar").
 /// - `brute` con `live_count != count`: fallback escalar ("scalar-fallback").
-/// - cualquier otro motor: "scalar".
+/// - cualquier otro caso: etiqueta SIMD actual ("portable" si `manual_simd`,
+///   "scalar" en caso contrario).
 ///
 /// Pura: sin asignaciones, sin `format!`/`String`/`Vec`.
-pub fn hud_line1_label(engine: &str, live_count: usize, count: usize) -> &'static str {
+pub fn hud_line1_label(engine: &str, manual_simd: bool, live_count: usize, count: usize) -> &'static str {
     if engine == "brute" && live_count != count {
         return "scalar-fallback";
     }
-    "scalar"
+    if manual_simd { "portable" } else { "scalar" }
 }
 
 /// Acumula `delta` y ejecuta subpasos fijos de `dt` consumiendo el acumulador.

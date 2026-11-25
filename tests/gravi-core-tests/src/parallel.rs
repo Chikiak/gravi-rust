@@ -143,8 +143,8 @@ fn ac_brute_tras_barnes_hut_usa_kernel_bruto() {
     let (cx, cy, half) = root_from_live_bodies(&bh_store);
     assert!(half > 0.0);
     let mut bh_arena = QuadtreeArena::allocate(n).expect("arena");
-    let _ = build_quadtree(&bh_store, &mut bh_arena, cx, cy, half);
-    let _ = compute_quadtree_masses(&mut bh_arena, &bh_store);
+    build_quadtree(&bh_store, &mut bh_arena, cx, cy, half).expect("build_quadtree");
+    compute_quadtree_masses(&mut bh_arena, &bh_store).expect("compute_quadtree_masses");
 
     let dispatcher = ParallelForceDispatcher::new(4);
     dispatcher.compute_forces_barnes_hut_parallel(

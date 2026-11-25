@@ -88,27 +88,22 @@ const TAU: f32 = 2.0 * std::f32::consts::PI;
 pub fn seed_linear(store: &mut NativeStore, width: f32, height: f32, speed: f32, seed: u32) {
     let mut rng = SplitMix64::new(seed);
     let count = store.count;
-    let x = store.x_slice();
-    let y = store.y_slice();
-    let vx = store.vx_slice();
-    let vy = store.vy_slice();
-    let mass = store.mass_slice();
-    let radius = store.radius_slice();
-
+    let c = store.channels_mut();
     for i in 0..count {
-        x[i] = rng.next_f32() * width;
-        y[i] = rng.next_f32() * height;
+        c.x[i] = rng.next_f32() * width;
+        c.y[i] = rng.next_f32() * height;
         let angle = rng.next_f32() * TAU;
-        vx[i] = angle.cos() * speed;
-        vy[i] = angle.sin() * speed;
-        mass[i] = 1.0;
-        radius[i] = 0.5;
+        c.vx[i] = angle.cos() * speed;
+        c.vy[i] = angle.sin() * speed;
+        c.mass[i] = 1.0;
+        c.radius[i] = 0.5;
     }
-    store.live_count = count;
-    store.free_head = -1;
-    for g in store.generation_slice().iter_mut() {
+    for g in c.generation.iter_mut() {
         *g = 0;
     }
+    drop(c);
+    store.live_count = count;
+    store.free_head = -1;
     clear_forces(store);
 }
 
@@ -128,13 +123,7 @@ pub fn seed_random_cloud(
     let cy = height * 0.5;
     let x_max = width - 1.0;
     let y_max = height - 1.0;
-    let x = store.x_slice();
-    let y = store.y_slice();
-    let vx = store.vx_slice();
-    let vy = store.vy_slice();
-    let mass = store.mass_slice();
-    let radius = store.radius_slice();
-
+    let c = store.channels_mut();
     for i in 0..count {
         let normal = rng.next_f32() + rng.next_f32() + rng.next_f32() - 1.5;
         let r = normal * spread;
@@ -151,18 +140,19 @@ pub fn seed_random_cloud(
         } else if yi >= height {
             yi = y_max;
         }
-        x[i] = xi;
-        y[i] = yi;
-        vx[i] = thermal_speed * (rng.next_f32() - 0.5);
-        vy[i] = thermal_speed * (rng.next_f32() - 0.5);
-        mass[i] = 1.0;
-        radius[i] = 0.5;
+        c.x[i] = xi;
+        c.y[i] = yi;
+        c.vx[i] = thermal_speed * (rng.next_f32() - 0.5);
+        c.vy[i] = thermal_speed * (rng.next_f32() - 0.5);
+        c.mass[i] = 1.0;
+        c.radius[i] = 0.5;
     }
-    store.live_count = count;
-    store.free_head = -1;
-    for g in store.generation_slice().iter_mut() {
+    for g in c.generation.iter_mut() {
         *g = 0;
     }
+    drop(c);
+    store.live_count = count;
+    store.free_head = -1;
     clear_forces(store);
 }
 
@@ -171,29 +161,24 @@ pub fn seed_random_cloud(
 pub fn seed_uniform_field(store: &mut NativeStore, width: f32, height: f32, max_speed: f32, seed: u32) {
     let mut rng = SplitMix64::new(seed);
     let count = store.count;
-    let x = store.x_slice();
-    let y = store.y_slice();
-    let vx = store.vx_slice();
-    let vy = store.vy_slice();
-    let mass = store.mass_slice();
-    let radius = store.radius_slice();
-
+    let c = store.channels_mut();
     for i in 0..count {
-        x[i] = rng.next_f32() * width;
-        y[i] = rng.next_f32() * height;
+        c.x[i] = rng.next_f32() * width;
+        c.y[i] = rng.next_f32() * height;
         let u = rng.next_f32();
         let speed_mag = u.sqrt() * max_speed;
         let angle = rng.next_f32() * TAU;
-        vx[i] = speed_mag * angle.cos();
-        vy[i] = speed_mag * angle.sin();
-        mass[i] = 1.0;
-        radius[i] = 0.5;
+        c.vx[i] = speed_mag * angle.cos();
+        c.vy[i] = speed_mag * angle.sin();
+        c.mass[i] = 1.0;
+        c.radius[i] = 0.5;
     }
-    store.live_count = count;
-    store.free_head = -1;
-    for g in store.generation_slice().iter_mut() {
+    for g in c.generation.iter_mut() {
         *g = 0;
     }
+    drop(c);
+    store.live_count = count;
+    store.free_head = -1;
     clear_forces(store);
 }
 
@@ -216,59 +201,50 @@ pub fn seed_orbital_disk(
     let g = PhysicsConstants::default().g;
     let inner = inner_radius.max(1.0);
     let soft_sq = softening * softening;
-    let x = store.x_slice();
-    let y = store.y_slice();
-    let vx = store.vx_slice();
-    let vy = store.vy_slice();
-    let mass = store.mass_slice();
-    let radius = store.radius_slice();
-
+    let c = store.channels_mut();
     for i in 0..count {
         let r = inner + rng.next_f32() * (outer_radius - inner);
         let theta = rng.next_f32() * TAU;
-        x[i] = cx + r * theta.cos();
-        y[i] = cy + r * theta.sin();
+        c.x[i] = cx + r * theta.cos();
+        c.y[i] = cy + r * theta.sin();
         let r_sq_soft = r * r + soft_sq;
         let v = r * (g * central_mass / (r_sq_soft * r_sq_soft.sqrt())).sqrt();
-        vx[i] = -v * theta.sin();
-        vy[i] = v * theta.cos();
-        mass[i] = 1.0;
-        radius[i] = 0.5;
+        c.vx[i] = -v * theta.sin();
+        c.vy[i] = v * theta.cos();
+        c.mass[i] = 1.0;
+        c.radius[i] = 0.5;
     }
-    store.live_count = count;
-    store.free_head = -1;
-    for g in store.generation_slice().iter_mut() {
+    for g in c.generation.iter_mut() {
         *g = 0;
     }
+    drop(c);
+    store.live_count = count;
+    store.free_head = -1;
     clear_forces(store);
 }
 
 /// Clampa X/Y a los límites [0, width] / [0, height] e invierte la velocidad
 /// (Vx/Vy) del cuerpo que toca un borde.
 pub fn reflect_bounds(store: &mut NativeStore, width: f32, height: f32) {
-    let x = store.x_slice();
-    let y = store.y_slice();
-    let vx = store.vx_slice();
-    let vy = store.vy_slice();
-    let mass = store.mass_slice();
-
-    for i in 0..store.count {
-        if mass[i] < 0.0 {
+    let count = store.count;
+    let c = store.channels_mut();
+    for i in 0..count {
+        if c.mass[i] < 0.0 {
             continue;
         }
-        if x[i] < 0.0 {
-            x[i] = 0.0;
-            vx[i] = -vx[i];
-        } else if x[i] > width {
-            x[i] = width;
-            vx[i] = -vx[i];
+        if c.x[i] < 0.0 {
+            c.x[i] = 0.0;
+            c.vx[i] = -c.vx[i];
+        } else if c.x[i] > width {
+            c.x[i] = width;
+            c.vx[i] = -c.vx[i];
         }
-        if y[i] < 0.0 {
-            y[i] = 0.0;
-            vy[i] = -vy[i];
-        } else if y[i] > height {
-            y[i] = height;
-            vy[i] = -vy[i];
+        if c.y[i] < 0.0 {
+            c.y[i] = 0.0;
+            c.vy[i] = -c.vy[i];
+        } else if c.y[i] > height {
+            c.y[i] = height;
+            c.vy[i] = -c.vy[i];
         }
     }
 }

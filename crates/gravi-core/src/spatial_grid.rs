@@ -213,6 +213,16 @@ impl Drop for SpatialGrid {
 /// Zero-allocation: solo punteros crudos y bucles `while`. Nunca escribe
 /// fuera de `bucket_head`.
 pub fn rebuild_grid(grid: &mut SpatialGrid, store: &NativeStore) {
+    // `next` tiene `body_count_max` entradas e indexa por índice de entidad
+    // (0..store.count). Debe ser >= store.count para no desbordar al escribir
+    // `next[i]` con i un índice de entidad del store.
+    if (grid.body_count_max as usize) < store.count {
+        panic!(
+            "SpatialGrid::rebuild_grid: body_count_max ({}) < store.count ({}); \
+             el buffer `next` se desbordaría al indexar por índice de entidad",
+            grid.body_count_max, store.count,
+        );
+    }
     unsafe {
         // Reset selectivo: solo buckets tocados en el frame anterior.
         let dirty_len = grid.dirty_len;

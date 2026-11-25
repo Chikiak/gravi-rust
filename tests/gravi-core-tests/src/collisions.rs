@@ -246,13 +246,26 @@ fn ac7_resolve_collisions_skips_dead_slots() {
     }
     store.live_count = 3;
 
-    let mut grid = SpatialGrid::allocate(4, 4, 2).unwrap();
+    // body_count_max debe ser >= store.count (3) porque next indexa por
+    // índice de entidad (0..store.count).
+    let mut grid = SpatialGrid::allocate(4, 4, 3).unwrap();
     grid.set_cell_size(64.0);
     rebuild_grid(&mut grid, &store);
 
     let cfg = CollisionConfig::default();
     let n = unsafe { resolve_collisions(&mut store, &grid, cfg) };
     assert_eq!(n, 1, "solo el par vivo (0,1) colisiona");
+}
+
+/// `rebuild_grid` panica si `body_count_max < store.count`: `next` se
+/// dimensiona por entidad (0..store.count) y desbordaría.
+#[test]
+#[should_panic(expected = "body_count_max")]
+fn rebuild_grid_panics_si_body_count_max_menor_que_store_count() {
+    let store = make_store(3); // count = 3
+    let mut grid = SpatialGrid::allocate(4, 4, 2).unwrap(); // body_count_max = 2 < 3
+    grid.set_cell_size(64.0);
+    rebuild_grid(&mut grid, &store);
 }
 
 /// Zero-allocation en hot path: comprobación por inspección de código

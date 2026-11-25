@@ -13,10 +13,10 @@ fn make_store(count: usize) -> NativeStore {
 fn draw_all_pinta_cuerpos_vivos_blanco() {
     let mut rb = RenderBuffer::new(10, 10);
     let mut store = make_store(5);
-    store.x_slice()[0] = 3.0;
-    store.y_slice()[0] = 4.0;
-    store.x_slice()[1] = 7.0;
-    store.y_slice()[1] = 1.0;
+    store.x_slice_mut()[0] = 3.0;
+    store.y_slice_mut()[0] = 4.0;
+    store.x_slice_mut()[1] = 7.0;
+    store.y_slice_mut()[1] = 1.0;
     store.live_count = 2;
     rb.draw_all(&store);
 
@@ -29,13 +29,13 @@ fn draw_all_pinta_cuerpos_vivos_blanco() {
 #[test]
 fn draw_all_descarta_fuera_de_rango_sin_panic() {
     let mut rb = RenderBuffer::new(4, 4);
-    let store = make_store(3);
-    store.x_slice()[0] = 100.0;
-    store.y_slice()[0] = 2.0;
-    store.x_slice()[1] = 2.0;
-    store.y_slice()[1] = 100.0;
-    store.x_slice()[2] = 2.0;
-    store.y_slice()[2] = 2.0;
+    let mut store = make_store(3);
+    store.x_slice_mut()[0] = 100.0;
+    store.y_slice_mut()[0] = 2.0;
+    store.x_slice_mut()[1] = 2.0;
+    store.y_slice_mut()[1] = 100.0;
+    store.x_slice_mut()[2] = 2.0;
+    store.y_slice_mut()[2] = 2.0;
     rb.draw_all(&store);
 
     assert_eq!(rb.image.get_color(2, 2), Color::WHITE);
@@ -63,8 +63,8 @@ fn imagen_es_rgba_con_tamanio_de_una_subida_a_textura() {
 fn draw_all_descarta_negativos_no_pinta_columna_cero() {
     let mut rb = RenderBuffer::new(4, 4);
     let mut store = make_store(1);
-    store.x_slice()[0] = -5.0;
-    store.y_slice()[0] = 3.0;
+    store.x_slice_mut()[0] = -5.0;
+    store.y_slice_mut()[0] = 3.0;
     store.live_count = 1;
     rb.draw_all(&store);
 
@@ -84,10 +84,10 @@ fn draw_all_descarta_negativos_no_pinta_columna_cero() {
 fn draw_all_descarta_fuera_de_rango_derecha_abajo() {
     let mut rb = RenderBuffer::new(4, 4);
     let mut store = make_store(2);
-    store.x_slice()[0] = 9.0;
-    store.y_slice()[0] = 9.0;
-    store.x_slice()[1] = 3.0;
-    store.y_slice()[1] = 3.0;
+    store.x_slice_mut()[0] = 9.0;
+    store.y_slice_mut()[0] = 9.0;
+    store.x_slice_mut()[1] = 3.0;
+    store.y_slice_mut()[1] = 3.0;
     store.live_count = 2;
     rb.draw_all(&store);
 
@@ -99,8 +99,8 @@ fn draw_all_descarta_fuera_de_rango_derecha_abajo() {
 fn draw_all_pinta_cuerpo_en_limite_cero() {
     let mut rb = RenderBuffer::new(4, 4);
     let mut store = make_store(1);
-    store.x_slice()[0] = 0.0;
-    store.y_slice()[0] = 0.0;
+    store.x_slice_mut()[0] = 0.0;
+    store.y_slice_mut()[0] = 0.0;
     store.live_count = 1;
     rb.draw_all(&store);
 

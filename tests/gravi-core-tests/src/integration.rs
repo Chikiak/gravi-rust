@@ -29,25 +29,21 @@ const DT: f32 = 0.016;
 fn make_two_body_store(sep: f32, speed: f32) -> NativeStore {
     let mut store = NativeStore::new(2).expect("NativeStore::new falló");
     store.init_lifecycle();
-    let mass = store.mass_slice();
-    let x = store.x_slice();
-    let y = store.y_slice();
-    let vx = store.vx_slice();
-    let vy = store.vy_slice();
-    let radius = store.radius_slice();
+    let c = store.channels_mut();
     let half = sep * 0.5;
-    x[0] = -half;
-    y[0] = 0.0;
-    vx[0] = 0.0;
-    vy[0] = speed;
-    mass[0] = 1.0;
-    radius[0] = 0.5;
-    x[1] = half;
-    y[1] = 0.0;
-    vx[1] = 0.0;
-    vy[1] = -speed;
-    mass[1] = 1.0;
-    radius[1] = 0.5;
+    c.x[0] = -half;
+    c.y[0] = 0.0;
+    c.vx[0] = 0.0;
+    c.vy[0] = speed;
+    c.mass[0] = 1.0;
+    c.radius[0] = 0.5;
+    c.x[1] = half;
+    c.y[1] = 0.0;
+    c.vx[1] = 0.0;
+    c.vy[1] = -speed;
+    c.mass[1] = 1.0;
+    c.radius[1] = 0.5;
+    drop(c);
     store.live_count = 2;
     store.free_head = -1;
     store
@@ -223,19 +219,22 @@ fn barnes_hut_vs_brute_small_n_within_threshold() {
     store.init_lifecycle();
     // Rejilla espaciada para evitar celdas unitarias profundas.
     let mut i = 0usize;
+    let c = store.channels_mut();
     while i < n {
-        store.x_slice()[i] = ((i % 10) as f32) * 11.0 + 2.0;
-        store.y_slice()[i] = ((i / 10) as f32) * 11.0 + 2.0;
-        store.mass_slice()[i] = 1.0 + (i as f32) * 0.13;
+        c.x[i] = ((i % 10) as f32) * 11.0 + 2.0;
+        c.y[i] = ((i / 10) as f32) * 11.0 + 2.0;
+        c.mass[i] = 1.0 + (i as f32) * 0.13;
         i += 1;
     }
+    drop(c);
     store.live_count = n;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     i = 0;
     while i < n {
         li[i] = i as i32;
         i += 1;
     }
+    let _ = li;
 
     // Fuerza bruta esperada (misma fórmula que quadtree::tests::bruto_esperado).
     unsafe {
@@ -366,18 +365,16 @@ fn parallel_vs_sequential_bit_identical() {
     let seq_fx;
     let seq_fy;
     {
-        let seq = NativeStore::new(n).expect("store creation failed");
-        let sx = seq.x_slice();
-        let sy = seq.y_slice();
-        let sm = seq.mass_slice();
+        let mut seq = NativeStore::new(n).expect("store creation failed");
+        let c = seq.channels_mut();
         let mut i = 0;
         while i < n {
-            sx[i] = (i as f32) * 0.7 - 50.0;
-            sy[i] = (i as f32) * 1.1 - 30.0;
-            sm[i] = 1.0 + (i as f32) * 0.3;
+            c.x[i] = (i as f32) * 0.7 - 50.0;
+            c.y[i] = (i as f32) * 1.1 - 30.0;
+            c.mass[i] = 1.0 + (i as f32) * 0.3;
             i += 1;
         }
-        // Slices se liberan al salir de este bloque.
+        drop(c);
         compute_forces_brute_range(&seq, 0, n, n, g);
         seq_fx = unsafe { std::slice::from_raw_parts(seq.fx, n) }.to_vec();
         seq_fy = unsafe { std::slice::from_raw_parts(seq.fy, n) }.to_vec();
@@ -387,17 +384,16 @@ fn parallel_vs_sequential_bit_identical() {
     let par_fx;
     let par_fy;
     {
-        let par = NativeStore::new(n).expect("store creation failed");
-        let px = par.x_slice();
-        let py = par.y_slice();
-        let pm = par.mass_slice();
+        let mut par = NativeStore::new(n).expect("store creation failed");
+        let c = par.channels_mut();
         let mut i = 0;
         while i < n {
-            px[i] = (i as f32) * 0.7 - 50.0;
-            py[i] = (i as f32) * 1.1 - 30.0;
-            pm[i] = 1.0 + (i as f32) * 0.3;
+            c.x[i] = (i as f32) * 0.7 - 50.0;
+            c.y[i] = (i as f32) * 1.1 - 30.0;
+            c.mass[i] = 1.0 + (i as f32) * 0.3;
             i += 1;
         }
+        drop(c);
         let dispatcher = ParallelForceDispatcher::new(4);
         dispatcher.compute_forces_parallel_range(&par, 0, n, g);
         dispatcher.shutdown();
@@ -483,12 +479,12 @@ fn verifier_f2_passed() {
 fn brute_force_two_body_newton_third_law() {
     let mut store = NativeStore::new(2).expect("store creation failed");
     store.init_lifecycle();
-    store.x_slice()[0] = 0.0;
-    store.y_slice()[0] = 0.0;
-    store.x_slice()[1] = 10.0;
-    store.y_slice()[1] = 0.0;
-    store.mass_slice()[0] = 1.0;
-    store.mass_slice()[1] = 1.0;
+    store.x_slice_mut()[0] = 0.0;
+    store.y_slice_mut()[0] = 0.0;
+    store.x_slice_mut()[1] = 10.0;
+    store.y_slice_mut()[1] = 0.0;
+    store.mass_slice_mut()[0] = 1.0;
+    store.mass_slice_mut()[1] = 1.0;
     store.live_count = 2;
 
     clear_forces(&mut store);
@@ -512,15 +508,10 @@ fn cuerpo_muerto_no_se_integra() {
 
     // Setup determinista: 3 cuerpos, slot 1 muerto.
     {
-        let x = store.x_slice();
-        let y = store.y_slice();
-        let vx = store.vx_slice();
-        let vy = store.vy_slice();
-        let mass = store.mass_slice();
-        let radius = store.radius_slice();
-        x[0] = 10.0; y[0] = 10.0; vx[0] = 1.0; vy[0] = 2.0; mass[0] = 1.0; radius[0] = 0.5;
-        x[1] = 20.0; y[1] = 20.0; vx[1] = 3.0; vy[1] = 4.0; mass[1] = -1.0; radius[1] = 0.5; // muerto
-        x[2] = 30.0; y[2] = 30.0; vx[2] = 5.0; vy[2] = 6.0; mass[2] = 2.0; radius[2] = 0.5;
+        let c = store.channels_mut();
+        c.x[0] = 10.0; c.y[0] = 10.0; c.vx[0] = 1.0; c.vy[0] = 2.0; c.mass[0] = 1.0; c.radius[0] = 0.5;
+        c.x[1] = 20.0; c.y[1] = 20.0; c.vx[1] = 3.0; c.vy[1] = 4.0; c.mass[1] = -1.0; c.radius[1] = 0.5; // muerto
+        c.x[2] = 30.0; c.y[2] = 30.0; c.vx[2] = 5.0; c.vy[2] = 6.0; c.mass[2] = 2.0; c.radius[2] = 0.5;
     }
     store.live_count = 2; // slots 0 y 2 vivos
     store.free_head = -1;
@@ -558,40 +549,30 @@ fn pipeline_con_muerto_equivale_control() {
     let mut store_a = NativeStore::new(4).expect("store creation failed");
     store_a.init_lifecycle();
     {
-        let x = store_a.x_slice();
-        let y = store_a.y_slice();
-        let vx = store_a.vx_slice();
-        let vy = store_a.vy_slice();
-        let mass = store_a.mass_slice();
-        let radius = store_a.radius_slice();
-        x[0] = 10.0; y[0] = 10.0; vx[0] = 1.0; vy[0] = 2.0; mass[0] = 1.0; radius[0] = 0.5;
-        x[1] = 20.0; y[1] = 20.0; vx[1] = 3.0; vy[1] = 4.0; mass[1] = 2.0; radius[1] = 0.5;
-        x[2] = 30.0; y[2] = 30.0; vx[2] = 5.0; vy[2] = 6.0; mass[2] = -1.0; radius[2] = 0.5; // muerto
-        x[3] = 40.0; y[3] = 40.0; vx[3] = 7.0; vy[3] = 8.0; mass[3] = 3.0; radius[3] = 0.5;
+        let c = store_a.channels_mut();
+        c.x[0] = 10.0; c.y[0] = 10.0; c.vx[0] = 1.0; c.vy[0] = 2.0; c.mass[0] = 1.0; c.radius[0] = 0.5;
+        c.x[1] = 20.0; c.y[1] = 20.0; c.vx[1] = 3.0; c.vy[1] = 4.0; c.mass[1] = 2.0; c.radius[1] = 0.5;
+        c.x[2] = 30.0; c.y[2] = 30.0; c.vx[2] = 5.0; c.vy[2] = 6.0; c.mass[2] = -1.0; c.radius[2] = 0.5; // muerto
+        c.x[3] = 40.0; c.y[3] = 40.0; c.vx[3] = 7.0; c.vy[3] = 8.0; c.mass[3] = 3.0; c.radius[3] = 0.5;
     }
     store_a.live_count = 3;
     store_a.free_head = -1;
     // live_indices[0..3] debe apuntar solo a vivos (0,1,3); el muerto (2) queda fuera del rango vivo.
     {
-        let li = store_a.live_indices_slice();
-        let lp = store_a.live_pos_slice();
-        li[0] = 0; li[1] = 1; li[2] = 3; li[3] = 2;
-        lp[0] = 0; lp[1] = 1; lp[3] = 2; lp[2] = 3;
+        let c = store_a.channels_mut();
+        c.live_indices[0] = 0; c.live_indices[1] = 1; c.live_indices[2] = 3; c.live_indices[3] = 2;
+        c.live_pos[0] = 0; c.live_pos[1] = 1; c.live_pos[3] = 2; c.live_pos[2] = 3;
+        drop(c);
     }
 
     // Store B: control con 3 vivos (mismos datos que vivos de A).
     let mut store_b = NativeStore::new(3).expect("store creation failed");
     store_b.init_lifecycle();
     {
-        let x = store_b.x_slice();
-        let y = store_b.y_slice();
-        let vx = store_b.vx_slice();
-        let vy = store_b.vy_slice();
-        let mass = store_b.mass_slice();
-        let radius = store_b.radius_slice();
-        x[0] = 10.0; y[0] = 10.0; vx[0] = 1.0; vy[0] = 2.0; mass[0] = 1.0; radius[0] = 0.5;
-        x[1] = 20.0; y[1] = 20.0; vx[1] = 3.0; vy[1] = 4.0; mass[1] = 2.0; radius[1] = 0.5;
-        x[2] = 40.0; y[2] = 40.0; vx[2] = 7.0; vy[2] = 8.0; mass[2] = 3.0; radius[2] = 0.5;
+        let c = store_b.channels_mut();
+        c.x[0] = 10.0; c.y[0] = 10.0; c.vx[0] = 1.0; c.vy[0] = 2.0; c.mass[0] = 1.0; c.radius[0] = 0.5;
+        c.x[1] = 20.0; c.y[1] = 20.0; c.vx[1] = 3.0; c.vy[1] = 4.0; c.mass[1] = 2.0; c.radius[1] = 0.5;
+        c.x[2] = 40.0; c.y[2] = 40.0; c.vx[2] = 7.0; c.vy[2] = 8.0; c.mass[2] = 3.0; c.radius[2] = 0.5;
     }
     store_b.live_count = 3;
     store_b.free_head = -1;
