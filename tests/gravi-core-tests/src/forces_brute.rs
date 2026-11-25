@@ -76,19 +76,16 @@ fn ac5_reflect_bounds_clamps_and_inverts_velocity() {
     // Escribir valores fuera de los límites (sobre slices en un scope
     // limitado para liberar el borrow inmutable antes de reflect_bounds).
     {
-        let x = store.x_slice();
-        let y = store.y_slice();
-        let vx = store.vx_slice();
-        let vy = store.vy_slice();
-        x[0] = -5.0;
-        vx[0] = 3.0;
-        x[1] = 105.0;
-        vx[1] = -2.0;
-        y[2] = -1.0;
-        vy[2] = 4.0;
-        y[3] = 101.0;
-        vy[3] = -1.0;
-    }
+        let c = store.channels_mut();
+        c.x[0] = -5.0;
+        c.vx[0] = 3.0;
+        c.x[1] = 105.0;
+        c.vx[1] = -2.0;
+        c.y[2] = -1.0;
+        c.vy[2] = 4.0;
+        c.y[3] = 101.0;
+        c.vy[3] = -1.0;
+    } // c se descarta aquí; se libera el &mut store antes de reflect_bounds
 
     reflect_bounds(&mut store, 100.0, 100.0);
 
@@ -111,23 +108,19 @@ fn reflect_bounds_no_toca_muertos() {
     let mut store = allocate(config()).unwrap();
     store.init_lifecycle();
     {
-        let x = store.x_slice();
-        let y = store.y_slice();
-        let vx = store.vx_slice();
-        let vy = store.vy_slice();
-        let mass = store.mass_slice();
+        let c = store.channels_mut();
         // slot 0 vivo: x=-10, vx=5, y=50, vy=0, mass=1
-        x[0] = -10.0;
-        vx[0] = 5.0;
-        y[0] = 50.0;
-        vy[0] = 0.0;
-        mass[0] = 1.0;
+        c.x[0] = -10.0;
+        c.vx[0] = 5.0;
+        c.y[0] = 50.0;
+        c.vy[0] = 0.0;
+        c.mass[0] = 1.0;
         // slot 1 muerto: x=110, vx=-5, y=50, vy=0, mass=-1
-        x[1] = 110.0;
-        vx[1] = -5.0;
-        y[1] = 50.0;
-        vy[1] = 0.0;
-        mass[1] = -1.0;
+        c.x[1] = 110.0;
+        c.vx[1] = -5.0;
+        c.y[1] = 50.0;
+        c.vy[1] = 0.0;
+        c.mass[1] = -1.0;
     }
 
     reflect_bounds(&mut store, 100.0, 100.0);
@@ -154,23 +147,19 @@ fn reflect_bounds_clampa_e_invierte() {
     let mut store = allocate(config()).unwrap();
     store.init_lifecycle();
     {
-        let x = store.x_slice();
-        let y = store.y_slice();
-        let vx = store.vx_slice();
-        let vy = store.vy_slice();
-        let mass = store.mass_slice();
+        let c = store.channels_mut();
         // cuerpo A: sale por izquierda y arriba
-        x[0] = -10.0;
-        vx[0] = 5.0;
-        y[0] = -20.0;
-        vy[0] = 8.0;
-        mass[0] = 1.0;
+        c.x[0] = -10.0;
+        c.vx[0] = 5.0;
+        c.y[0] = -20.0;
+        c.vy[0] = 8.0;
+        c.mass[0] = 1.0;
         // cuerpo B: sale por derecha y abajo
-        x[1] = 110.0;
-        vx[1] = -5.0;
-        y[1] = 120.0;
-        vy[1] = -3.0;
-        mass[1] = 1.0;
+        c.x[1] = 110.0;
+        c.vx[1] = -5.0;
+        c.y[1] = 120.0;
+        c.vy[1] = -3.0;
+        c.mass[1] = 1.0;
     }
 
     reflect_bounds(&mut store, 100.0, 100.0);
@@ -218,36 +207,31 @@ fn fuerza_cero_con_muerto_entre_vivos() {
     .unwrap();
     store_a.init_lifecycle();
     {
-        let x = store_a.x_slice();
-        let y = store_a.y_slice();
-        let vx = store_a.vx_slice();
-        let vy = store_a.vy_slice();
-        let mass = store_a.mass_slice();
-        let radius = store_a.radius_slice();
-        x[0] = 10.0;
-        y[0] = 10.0;
-        vx[0] = 1.0;
-        vy[0] = 2.0;
-        mass[0] = 1.0;
-        radius[0] = 0.5;
-        x[1] = 20.0;
-        y[1] = 20.0;
-        vx[1] = 3.0;
-        vy[1] = 4.0;
-        mass[1] = 2.0;
-        radius[1] = 0.5;
-        x[2] = 30.0;
-        y[2] = 30.0;
-        vx[2] = 5.0;
-        vy[2] = 6.0;
-        mass[2] = -1.0; // muerto
-        radius[2] = 0.5;
-        x[3] = 40.0;
-        y[3] = 40.0;
-        vx[3] = 7.0;
-        vy[3] = 8.0;
-        mass[3] = 3.0;
-        radius[3] = 0.5;
+        let c = store_a.channels_mut();
+        c.x[0] = 10.0;
+        c.y[0] = 10.0;
+        c.vx[0] = 1.0;
+        c.vy[0] = 2.0;
+        c.mass[0] = 1.0;
+        c.radius[0] = 0.5;
+        c.x[1] = 20.0;
+        c.y[1] = 20.0;
+        c.vx[1] = 3.0;
+        c.vy[1] = 4.0;
+        c.mass[1] = 2.0;
+        c.radius[1] = 0.5;
+        c.x[2] = 30.0;
+        c.y[2] = 30.0;
+        c.vx[2] = 5.0;
+        c.vy[2] = 6.0;
+        c.mass[2] = -1.0; // muerto
+        c.radius[2] = 0.5;
+        c.x[3] = 40.0;
+        c.y[3] = 40.0;
+        c.vx[3] = 7.0;
+        c.vy[3] = 8.0;
+        c.mass[3] = 3.0;
+        c.radius[3] = 0.5;
     }
     store_a.live_count = 3;
     store_a.free_head = -1;
@@ -261,30 +245,25 @@ fn fuerza_cero_con_muerto_entre_vivos() {
     .unwrap();
     store_b.init_lifecycle();
     {
-        let x = store_b.x_slice();
-        let y = store_b.y_slice();
-        let vx = store_b.vx_slice();
-        let vy = store_b.vy_slice();
-        let mass = store_b.mass_slice();
-        let radius = store_b.radius_slice();
-        x[0] = 10.0;
-        y[0] = 10.0;
-        vx[0] = 1.0;
-        vy[0] = 2.0;
-        mass[0] = 1.0;
-        radius[0] = 0.5;
-        x[1] = 20.0;
-        y[1] = 20.0;
-        vx[1] = 3.0;
-        vy[1] = 4.0;
-        mass[1] = 2.0;
-        radius[1] = 0.5;
-        x[2] = 40.0;
-        y[2] = 40.0;
-        vx[2] = 7.0;
-        vy[2] = 8.0;
-        mass[2] = 3.0;
-        radius[2] = 0.5;
+        let c = store_b.channels_mut();
+        c.x[0] = 10.0;
+        c.y[0] = 10.0;
+        c.vx[0] = 1.0;
+        c.vy[0] = 2.0;
+        c.mass[0] = 1.0;
+        c.radius[0] = 0.5;
+        c.x[1] = 20.0;
+        c.y[1] = 20.0;
+        c.vx[1] = 3.0;
+        c.vy[1] = 4.0;
+        c.mass[1] = 2.0;
+        c.radius[1] = 0.5;
+        c.x[2] = 40.0;
+        c.y[2] = 40.0;
+        c.vx[2] = 7.0;
+        c.vy[2] = 8.0;
+        c.mass[2] = 3.0;
+        c.radius[2] = 0.5;
     }
     store_b.live_count = 3;
     store_b.free_head = -1;

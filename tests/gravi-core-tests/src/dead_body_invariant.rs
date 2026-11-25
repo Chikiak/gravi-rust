@@ -21,27 +21,26 @@ fn make_store_con_muerto(n_vivos: usize) -> NativeStore {
     let mut store = NativeStore::new(count).unwrap();
     store.init_lifecycle();
 
-    // Canales de vivos y basura del muerto. Los borrados de slices se descartan
-    // al cerrar el bloque antes de tocar `live_count` (campo directo del store).
-    {
-        let x = store.x_slice(); let y = store.y_slice();
-        let vx = store.vx_slice(); let vy = store.vy_slice();
-        let mass = store.mass_slice(); let radius = store.radius_slice();
-
-        for i in 0..n_vivos {
-            x[i] = (i as f32) * 3.0 + 1.0;
-            y[i] = (i as f32) * 2.0 + 1.0;
-            vx[i] = (i as f32) * 0.5 - 1.0;
-            vy[i] = (i as f32) * 0.3 + 0.5;
-            mass[i] = (i as f32) + 1.0;
-            radius[i] = 0.5;
-        }
-
-        // Cuerpo muerto: basura en canales, mass = -1.0.
-        mass[n_vivos] = DEAD_MASS;
-        x[n_vivos] = 9999.0; y[n_vivos] = -9999.0;
-        vx[n_vivos] = 12345.0; vy[n_vivos] = -54321.0;
+    // Vistas mutables sobre todos los canales con un único &mut store. Se
+    // escriben vivos y la basura del muerto, luego se suelta el préstamo antes
+    // de tocar `live_count` (campo directo del store).
+    let c = store.channels_mut();
+    for i in 0..n_vivos {
+        c.x[i] = (i as f32) * 3.0 + 1.0;
+        c.y[i] = (i as f32) * 2.0 + 1.0;
+        c.vx[i] = (i as f32) * 0.5 - 1.0;
+        c.vy[i] = (i as f32) * 0.3 + 0.5;
+        c.mass[i] = (i as f32) + 1.0;
+        c.radius[i] = 0.5;
     }
+
+    // Cuerpo muerto: basura en canales, mass = -1.0.
+    c.mass[n_vivos] = DEAD_MASS;
+    c.x[n_vivos] = 9999.0;
+    c.y[n_vivos] = -9999.0;
+    c.vx[n_vivos] = 12345.0;
+    c.vy[n_vivos] = -54321.0;
+    drop(c);
 
     store.live_count = n_vivos; // excluye el muerto del rango vivo
     store
@@ -52,18 +51,16 @@ fn make_control_store(n_vivos: usize) -> NativeStore {
     let mut store = NativeStore::new(n_vivos).unwrap();
     store.init_lifecycle();
 
-    let x = store.x_slice(); let y = store.y_slice();
-    let vx = store.vx_slice(); let vy = store.vy_slice();
-    let mass = store.mass_slice(); let radius = store.radius_slice();
-
+    let c = store.channels_mut();
     for i in 0..n_vivos {
-        x[i] = (i as f32) * 3.0 + 1.0;
-        y[i] = (i as f32) * 2.0 + 1.0;
-        vx[i] = (i as f32) * 0.5 - 1.0;
-        vy[i] = (i as f32) * 0.3 + 0.5;
-        mass[i] = (i as f32) + 1.0;
-        radius[i] = 0.5;
+        c.x[i] = (i as f32) * 3.0 + 1.0;
+        c.y[i] = (i as f32) * 2.0 + 1.0;
+        c.vx[i] = (i as f32) * 0.5 - 1.0;
+        c.vy[i] = (i as f32) * 0.3 + 0.5;
+        c.mass[i] = (i as f32) + 1.0;
+        c.radius[i] = 0.5;
     }
+    drop(c);
     store
 }
 

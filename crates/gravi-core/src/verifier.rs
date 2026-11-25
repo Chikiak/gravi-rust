@@ -75,48 +75,43 @@ pub fn seed_two_body_symmetric_for_verification(
     let count = store.count;
     debug_assert!(count >= 2, "seed_two_body_symmetric_for_verification: se requieren >= 2 cuerpos");
 
-    let mass = store.mass_slice();
-    let x = store.x_slice();
-    let y = store.y_slice();
-    let vx = store.vx_slice();
-    let vy = store.vy_slice();
-    let radius = store.radius_slice();
-
+    let c = store.channels_mut();
     let half = sep * 0.5;
 
     // Cuerpo 0: izquierda, velocidad hacia arriba.
-    x[0] = -half;
-    y[0] = 0.0;
-    vx[0] = 0.0;
-    vy[0] = speed;
-    mass[0] = 1.0;
-    radius[0] = 0.5;
+    c.x[0] = -half;
+    c.y[0] = 0.0;
+    c.vx[0] = 0.0;
+    c.vy[0] = speed;
+    c.mass[0] = 1.0;
+    c.radius[0] = 0.5;
 
     // Cuerpo 1: derecha, velocidad hacia abajo.
-    x[1] = half;
-    y[1] = 0.0;
-    vx[1] = 0.0;
-    vy[1] = -speed;
-    mass[1] = 1.0;
-    radius[1] = 0.5;
+    c.x[1] = half;
+    c.y[1] = 0.0;
+    c.vx[1] = 0.0;
+    c.vy[1] = -speed;
+    c.mass[1] = 1.0;
+    c.radius[1] = 0.5;
 
     // Cuerpos restantes (si los hubiera): en el origen, sin velocidad.
     let mut i = 2;
     while i < count {
-        x[i] = 0.0;
-        y[i] = 0.0;
-        vx[i] = 0.0;
-        vy[i] = 0.0;
-        mass[i] = 0.0;
-        radius[i] = 0.5;
+        c.x[i] = 0.0;
+        c.y[i] = 0.0;
+        c.vx[i] = 0.0;
+        c.vy[i] = 0.0;
+        c.mass[i] = 0.0;
+        c.radius[i] = 0.5;
         i += 1;
     }
 
-    store.live_count = 2;
-    store.free_head = -1;
-    for g in store.generation_slice().iter_mut() {
+    for g in c.generation.iter_mut() {
         *g = 0;
     }
+    drop(c);
+    store.live_count = 2;
+    store.free_head = -1;
 }
 
 /// Ejecuta la verificación para un preset dado.

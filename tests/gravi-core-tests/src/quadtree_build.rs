@@ -44,12 +44,13 @@ fn ac3_arena_cero_cuerpos_es_error() {
 #[test]
 fn ac4_build_arbol_simple_raiz_una_hoja() {
     let mut store = make_store(1);
-    store.x_slice()[0] = 10.0;
-    store.y_slice()[0] = 20.0;
-    store.mass_slice()[0] = 5.0;
+    store.x_slice_mut()[0] = 10.0;
+    store.y_slice_mut()[0] = 20.0;
+    store.mass_slice_mut()[0] = 5.0;
     store.live_count = 1;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0;
+    drop(li);
 
     let mut arena = QuadtreeArena::allocate(4).unwrap();
     let res = build_quadtree(&store, &mut arena, 0.0, 0.0, 100.0);
@@ -68,16 +69,17 @@ fn ac4_build_arbol_simple_raiz_una_hoja() {
 #[test]
 fn ac5_build_subdivide_hoja_al_segundo_cuerpo() {
     let mut store = make_store(2);
-    store.x_slice()[0] = 10.0;
-    store.y_slice()[0] = 10.0;
-    store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 90.0;
-    store.y_slice()[1] = 90.0;
-    store.mass_slice()[1] = 2.0;
+    store.x_slice_mut()[0] = 10.0;
+    store.y_slice_mut()[0] = 10.0;
+    store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 90.0;
+    store.y_slice_mut()[1] = 90.0;
+    store.mass_slice_mut()[1] = 2.0;
     store.live_count = 2;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0;
     li[1] = 1;
+    drop(li);
 
     let mut arena = QuadtreeArena::allocate(8).unwrap();
     let res = build_quadtree(&store, &mut arena, 50.0, 50.0, 100.0);
@@ -133,20 +135,21 @@ fn ac8_drop_libera_sin_panic() {
 #[test]
 fn ac9_build_masas_acumuladas_en_camino() {
     let mut store = make_store(3);
-    store.x_slice()[0] = 10.0;
-    store.y_slice()[0] = 10.0;
-    store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 12.0;
-    store.y_slice()[1] = 12.0;
-    store.mass_slice()[1] = 2.0;
-    store.x_slice()[2] = 90.0;
-    store.y_slice()[2] = 90.0;
-    store.mass_slice()[2] = 4.0;
+    store.x_slice_mut()[0] = 10.0;
+    store.y_slice_mut()[0] = 10.0;
+    store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 12.0;
+    store.y_slice_mut()[1] = 12.0;
+    store.mass_slice_mut()[1] = 2.0;
+    store.x_slice_mut()[2] = 90.0;
+    store.y_slice_mut()[2] = 90.0;
+    store.mass_slice_mut()[2] = 4.0;
     store.live_count = 3;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0;
     li[1] = 1;
     li[2] = 2;
+    drop(li);
 
     let mut arena = QuadtreeArena::allocate(16).unwrap();
     assert!(build_quadtree(&store, &mut arena, 50.0, 50.0, 100.0).is_ok());
@@ -181,20 +184,21 @@ fn a2_masses_arbol_vacio_root_negativo_es_ok() {
 fn a2_masses_acumula_masa_y_count_post_orden() {
     // 3 cuerpos en cuadrantes distintos del root (sin subdivicion anidada).
     let mut store = make_store(3);
-    store.x_slice()[0] = 10.0;
-    store.y_slice()[0] = 10.0;
-    store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 90.0;
-    store.y_slice()[1] = 90.0;
-    store.mass_slice()[1] = 2.0;
-    store.x_slice()[2] = 10.0;
-    store.y_slice()[2] = 90.0;
-    store.mass_slice()[2] = 4.0;
+    store.x_slice_mut()[0] = 10.0;
+    store.y_slice_mut()[0] = 10.0;
+    store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 90.0;
+    store.y_slice_mut()[1] = 90.0;
+    store.mass_slice_mut()[1] = 2.0;
+    store.x_slice_mut()[2] = 10.0;
+    store.y_slice_mut()[2] = 90.0;
+    store.mass_slice_mut()[2] = 4.0;
     store.live_count = 3;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0;
     li[1] = 1;
     li[2] = 2;
+    drop(li);
 
     let mut arena = QuadtreeArena::allocate(32).unwrap();
     assert!(build_quadtree(&store, &mut arena, 50.0, 50.0, 100.0).is_ok());
@@ -234,12 +238,13 @@ fn a2_masses_acumula_masa_y_count_post_orden() {
 #[test]
 fn a2_masses_una_hoja_sin_subdividir() {
     let mut store = make_store(1);
-    store.x_slice()[0] = 10.0;
-    store.y_slice()[0] = 20.0;
-    store.mass_slice()[0] = 5.0;
+    store.x_slice_mut()[0] = 10.0;
+    store.y_slice_mut()[0] = 20.0;
+    store.mass_slice_mut()[0] = 5.0;
     store.live_count = 1;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0;
+    drop(li);
 
     let mut arena = QuadtreeArena::allocate(4).unwrap();
     assert!(build_quadtree(&store, &mut arena, 0.0, 0.0, 100.0).is_ok());
@@ -266,12 +271,13 @@ fn a2_root_cero_cuerpo_devuelve_ceros() {
 #[test]
 fn a2_root_un_cuerpo_centro_en_el_cuerpo() {
     let mut store = make_store(1);
-    store.x_slice()[0] = 100.0;
-    store.y_slice()[0] = -200.0;
-    store.mass_slice()[0] = 7.0;
+    store.x_slice_mut()[0] = 100.0;
+    store.y_slice_mut()[0] = -200.0;
+    store.mass_slice_mut()[0] = 7.0;
     store.live_count = 1;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0;
+    drop(li);
 
     let (cx, cy, half) = root_from_live_bodies(&store);
     assert_eq!(cx, 100.0);
@@ -282,22 +288,23 @@ fn a2_root_un_cuerpo_centro_en_el_cuerpo() {
 #[test]
 fn a2_root_centro_dentro_del_rectangulo_de_vivos() {
     let mut store = make_store(4);
-    store.x_slice()[0] = 0.0;
-    store.y_slice()[0] = 0.0;
-    store.x_slice()[1] = 100.0;
-    store.y_slice()[1] = 0.0;
-    store.x_slice()[2] = 0.0;
-    store.y_slice()[2] = 100.0;
-    store.x_slice()[3] = 100.0;
-    store.y_slice()[3] = 100.0;
+    store.x_slice_mut()[0] = 0.0;
+    store.y_slice_mut()[0] = 0.0;
+    store.x_slice_mut()[1] = 100.0;
+    store.y_slice_mut()[1] = 0.0;
+    store.x_slice_mut()[2] = 0.0;
+    store.y_slice_mut()[2] = 100.0;
+    store.x_slice_mut()[3] = 100.0;
+    store.y_slice_mut()[3] = 100.0;
     for i in 0..4usize {
-        store.mass_slice()[i] = 1.0;
+        store.mass_slice_mut()[i] = 1.0;
     }
     store.live_count = 4;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     for i in 0..4usize {
         li[i] = i as i32;
     }
+    drop(li);
 
     let (cx, cy, half) = root_from_live_bodies(&store);
     assert_eq!(cx, 50.0);
@@ -314,22 +321,23 @@ fn a2_root_centro_dentro_del_rectangulo_de_vivos() {
 fn a2_root_solo_cuerpos_vivos_ignorando_muertos() {
     let mut store = make_store(4);
     // Cuerpo 0 y 2 vivos, 1 y 3 muertos (masa < 0, pero live_count define los vivos).
-    store.x_slice()[0] = 10.0;
-    store.y_slice()[0] = 10.0;
-    store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 1000.0;
-    store.y_slice()[1] = 1000.0;
-    store.mass_slice()[1] = -1.0; // muerto (no esta en live_indices)
-    store.x_slice()[2] = 20.0;
-    store.y_slice()[2] = 20.0;
-    store.mass_slice()[2] = 1.0;
-    store.x_slice()[3] = -1000.0;
-    store.y_slice()[3] = -1000.0;
-    store.mass_slice()[3] = -1.0; // muerto
+    store.x_slice_mut()[0] = 10.0;
+    store.y_slice_mut()[0] = 10.0;
+    store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 1000.0;
+    store.y_slice_mut()[1] = 1000.0;
+    store.mass_slice_mut()[1] = -1.0; // muerto (no esta en live_indices)
+    store.x_slice_mut()[2] = 20.0;
+    store.y_slice_mut()[2] = 20.0;
+    store.mass_slice_mut()[2] = 1.0;
+    store.x_slice_mut()[3] = -1000.0;
+    store.y_slice_mut()[3] = -1000.0;
+    store.mass_slice_mut()[3] = -1.0; // muerto
     store.live_count = 2;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0;
     li[1] = 2;
+    drop(li);
 
     let (cx, cy, half) = root_from_live_bodies(&store);
     assert_eq!(cx, 15.0); // (10+20)/2
@@ -358,16 +366,17 @@ fn ac_alloc_node_no_avanza_sin_capacidad() {
 fn ac_overflow_no_corrompe_arena() {
     // 2 cuerpos que forzarán subdivisión
     let mut store = make_store(2);
-    store.x_slice()[0] = 10.0;
-    store.y_slice()[0] = 10.0;
-    store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 90.0;
-    store.y_slice()[1] = 90.0;
-    store.mass_slice()[1] = 2.0;
+    store.x_slice_mut()[0] = 10.0;
+    store.y_slice_mut()[0] = 10.0;
+    store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 90.0;
+    store.y_slice_mut()[1] = 90.0;
+    store.mass_slice_mut()[1] = 2.0;
     store.live_count = 2;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0;
     li[1] = 1;
+    drop(li);
 
     // Arena artificialmente pequeña: capacidad 4 (< 5 nodos para raíz + 4 hijos).
     // Se usa allocate(1) (cap=32) y se reduce capacity para forzar Overflow
@@ -421,16 +430,17 @@ fn ac_consts_quadtree_guardas_existen() {
 fn quadtree_root_clamp_min_max_half() {
     // AC1: extent pequeño -> half >= MIN_ROOT_HALF
     let mut store = make_store(2);
-    store.x_slice()[0] = 10.0;
-    store.y_slice()[0] = 10.0;
-    store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 11.0;
-    store.y_slice()[1] = 11.0;
-    store.mass_slice()[1] = 1.0;
+    store.x_slice_mut()[0] = 10.0;
+    store.y_slice_mut()[0] = 10.0;
+    store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 11.0;
+    store.y_slice_mut()[1] = 11.0;
+    store.mass_slice_mut()[1] = 1.0;
     store.live_count = 2;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0;
     li[1] = 1;
+    drop(li);
 
     let (_cx, _cy, half) = root_from_live_bodies(&store);
     assert!(
@@ -442,16 +452,17 @@ fn quadtree_root_clamp_min_max_half() {
 
     // extent grande (1920x980) -> half <= MAX_ROOT_HALF
     let mut store2 = make_store(2);
-    store2.x_slice()[0] = 0.0;
-    store2.y_slice()[0] = 0.0;
-    store2.mass_slice()[0] = 1.0;
-    store2.x_slice()[1] = 1920.0;
-    store2.y_slice()[1] = 980.0;
-    store2.mass_slice()[1] = 1.0;
+    store2.x_slice_mut()[0] = 0.0;
+    store2.y_slice_mut()[0] = 0.0;
+    store2.mass_slice_mut()[0] = 1.0;
+    store2.x_slice_mut()[1] = 1920.0;
+    store2.y_slice_mut()[1] = 980.0;
+    store2.mass_slice_mut()[1] = 1.0;
     store2.live_count = 2;
-    let li2 = store2.live_indices_slice();
+    let li2 = store2.live_indices_slice_mut();
     li2[0] = 0;
     li2[1] = 1;
+    drop(li2);
 
     let (cx2, cy2, half2) = root_from_live_bodies(&store2);
     assert!(
@@ -477,18 +488,19 @@ fn quadtree_no_desborda_arena_con_cuerpos_coincidentes() {
     let mut store = make_store(n);
     let mut i = 0usize;
     while i < n {
-        store.x_slice()[i] = 50.0;
-        store.y_slice()[i] = 50.0;
-        store.mass_slice()[i] = 1.0;
+        store.x_slice_mut()[i] = 50.0;
+        store.y_slice_mut()[i] = 50.0;
+        store.mass_slice_mut()[i] = 1.0;
         i += 1;
     }
     store.live_count = n;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     i = 0;
     while i < n {
         li[i] = i as i32;
         i += 1;
     }
+    drop(li);
 
     // Arena pequeña: capacidad suficiente solo para la raíz. Con
     // root_half=1.0 (< MIN_CELL_SIZE=2.0) se degrada inmediatamente a
@@ -541,12 +553,13 @@ fn quadtree_leaf_multi_masa_acumulada() {
     // profundidad). compute_quadtree_masses da mass = suma y count = 3.
     let n = 3usize;
     let mut store = make_store(n);
-    store.x_slice()[0] = 50.0; store.y_slice()[0] = 50.0; store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 50.0; store.y_slice()[1] = 50.0; store.mass_slice()[1] = 2.0;
-    store.x_slice()[2] = 50.0; store.y_slice()[2] = 50.0; store.mass_slice()[2] = 3.0;
+    store.x_slice_mut()[0] = 50.0; store.y_slice_mut()[0] = 50.0; store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 50.0; store.y_slice_mut()[1] = 50.0; store.mass_slice_mut()[1] = 2.0;
+    store.x_slice_mut()[2] = 50.0; store.y_slice_mut()[2] = 50.0; store.mass_slice_mut()[2] = 3.0;
     store.live_count = n;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0; li[1] = 1; li[2] = 2;
+    drop(li);
 
     // Root half muy pequeño para forzar degradación inmediata (half=4 < MIN_CELL_SIZE=2? no, 4>=2).
     // Usar profundidad: forzar que no se subdivida pasando root_half=2.0 (>=MIN_CELL_SIZE)
@@ -587,13 +600,14 @@ fn ac_insert_profundo_limite_32() {
     let n = 4usize;
     let mut store = make_store(n);
     // Cuerpos en posiciones muy cercanas para forzar muchas subdivisiones.
-    store.x_slice()[0] = 50.0; store.y_slice()[0] = 50.0; store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 50.0 + 0.001; store.y_slice()[1] = 50.0 + 0.001; store.mass_slice()[1] = 1.0;
-    store.x_slice()[2] = 50.0 + 0.002; store.y_slice()[2] = 50.0 + 0.002; store.mass_slice()[2] = 1.0;
-    store.x_slice()[3] = 50.0 + 0.003; store.y_slice()[3] = 50.0 + 0.003; store.mass_slice()[3] = 1.0;
+    store.x_slice_mut()[0] = 50.0; store.y_slice_mut()[0] = 50.0; store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 50.0 + 0.001; store.y_slice_mut()[1] = 50.0 + 0.001; store.mass_slice_mut()[1] = 1.0;
+    store.x_slice_mut()[2] = 50.0 + 0.002; store.y_slice_mut()[2] = 50.0 + 0.002; store.mass_slice_mut()[2] = 1.0;
+    store.x_slice_mut()[3] = 50.0 + 0.003; store.y_slice_mut()[3] = 50.0 + 0.003; store.mass_slice_mut()[3] = 1.0;
     store.live_count = n;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0; li[1] = 1; li[2] = 2; li[3] = 3;
+    drop(li);
 
     let mut arena = QuadtreeArena::allocate(256).unwrap();
     let res = build_quadtree(&store, &mut arena, 50.0, 50.0, 64.0);
@@ -625,18 +639,19 @@ fn ac_overflow_solo_arena_llena_real() {
     let mut store = make_store(n);
     let mut i = 0usize;
     while i < n {
-        store.x_slice()[i] = 100.0;
-        store.y_slice()[i] = 100.0;
-        store.mass_slice()[i] = 1.0;
+        store.x_slice_mut()[i] = 100.0;
+        store.y_slice_mut()[i] = 100.0;
+        store.mass_slice_mut()[i] = 1.0;
         i += 1;
     }
     store.live_count = n;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     i = 0;
     while i < n {
         li[i] = i as i32;
         i += 1;
     }
+    drop(li);
 
     // Arena con capacidad suficiente para raíz + degradación (no se consumen
     // nodos extra en LeafMulti). Capacidad muy pequeña (solo raíz) debería

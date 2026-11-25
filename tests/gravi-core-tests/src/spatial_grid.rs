@@ -37,13 +37,14 @@ fn ac1_allocate_reserves_buckets_and_next() {
 #[test]
 fn ac2_rebuild_grid_no_write_outside_bucket_head() {
     let mut store = make_store(4);
-    store.x_slice()[0] = 10.0; store.y_slice()[0] = 10.0; store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 70.0; store.y_slice()[1] = 70.0; store.mass_slice()[1] = 1.0;
-    store.x_slice()[2] = 130.0; store.y_slice()[2] = 130.0; store.mass_slice()[2] = 1.0;
-    store.x_slice()[3] = -5.0; store.y_slice()[3] = -5.0; store.mass_slice()[3] = 1.0; // fuera, clampeado
+    store.x_slice_mut()[0] = 10.0; store.y_slice_mut()[0] = 10.0; store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 70.0; store.y_slice_mut()[1] = 70.0; store.mass_slice_mut()[1] = 1.0;
+    store.x_slice_mut()[2] = 130.0; store.y_slice_mut()[2] = 130.0; store.mass_slice_mut()[2] = 1.0;
+    store.x_slice_mut()[3] = -5.0; store.y_slice_mut()[3] = -5.0; store.mass_slice_mut()[3] = 1.0; // fuera, clampeado
     store.live_count = 4;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0; li[1] = 1; li[2] = 2; li[3] = 3;
+    drop(li);
 
     let mut grid = SpatialGrid::allocate(30, 16, 4).unwrap();
     grid.set_cell_size(64.0);
@@ -71,12 +72,13 @@ fn ac2_rebuild_grid_no_write_outside_bucket_head() {
 #[test]
 fn ac3_dead_slots_skipped() {
     let mut store = make_store(3);
-    store.x_slice()[0] = 10.0; store.y_slice()[0] = 10.0; store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 20.0; store.y_slice()[1] = 20.0; store.mass_slice()[1] = -1.0; // muerto
-    store.x_slice()[2] = 30.0; store.y_slice()[2] = 30.0; store.mass_slice()[2] = 1.0;
+    store.x_slice_mut()[0] = 10.0; store.y_slice_mut()[0] = 10.0; store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 20.0; store.y_slice_mut()[1] = 20.0; store.mass_slice_mut()[1] = -1.0; // muerto
+    store.x_slice_mut()[2] = 30.0; store.y_slice_mut()[2] = 30.0; store.mass_slice_mut()[2] = 1.0;
     store.live_count = 3;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0; li[1] = 1; li[2] = 2;
+    drop(li);
 
     let mut grid = SpatialGrid::allocate(30, 16, 3).unwrap();
     grid.set_cell_size(64.0);
@@ -100,13 +102,14 @@ fn ac4_enumerator_emits_each_pair_once() {
     let mut store = make_store(3);
     // Todos en la misma celda (0,0).
     for i in 0..3usize {
-        store.x_slice()[i] = 10.0 + (i as f32);
-        store.y_slice()[i] = 10.0 + (i as f32);
-        store.mass_slice()[i] = 1.0;
+        store.x_slice_mut()[i] = 10.0 + (i as f32);
+        store.y_slice_mut()[i] = 10.0 + (i as f32);
+        store.mass_slice_mut()[i] = 1.0;
     }
     store.live_count = 3;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0; li[1] = 1; li[2] = 2;
+    drop(li);
 
     let mut grid = SpatialGrid::allocate(30, 16, 3).unwrap();
     grid.set_cell_size(64.0);
@@ -145,10 +148,10 @@ fn ac5_get_cell_out_of_range_returns_minus_one() {
 #[test]
 fn ac6_bodies_outside_window_clamp() {
     let mut store = make_store(2);
-    store.x_slice()[0] = -100.0; store.y_slice()[0] = -100.0; store.mass_slice()[0] = 1.0;
-    store.x_slice()[1] = 2000.0; store.y_slice()[1] = 2000.0; store.mass_slice()[1] = 1.0;
+    store.x_slice_mut()[0] = -100.0; store.y_slice_mut()[0] = -100.0; store.mass_slice_mut()[0] = 1.0;
+    store.x_slice_mut()[1] = 2000.0; store.y_slice_mut()[1] = 2000.0; store.mass_slice_mut()[1] = 1.0;
     store.live_count = 2;
-    let li = store.live_indices_slice();
+    let li = store.live_indices_slice_mut();
     li[0] = 0; li[1] = 1;
 
     let mut grid = SpatialGrid::allocate(30, 16, 2).unwrap();
@@ -180,10 +183,10 @@ fn timing_rebuild_grid_5000_bodies() {
     let mut store = NativeStore::new(5000).expect("store");
     store.init_lifecycle();
     for k in 0..5000usize {
-        store.x_slice()[k] = (k as f32) * 0.17;
-        store.y_slice()[k] = (k as f32) * 0.23;
-        store.mass_slice()[k] = 1.0;
-        let li = store.live_indices_slice();
+        store.x_slice_mut()[k] = (k as f32) * 0.17;
+        store.y_slice_mut()[k] = (k as f32) * 0.23;
+        store.mass_slice_mut()[k] = 1.0;
+        let li = store.live_indices_slice_mut();
         li[k] = k as i32;
     }
     store.live_count = 5000;
