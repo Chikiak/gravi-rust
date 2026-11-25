@@ -199,6 +199,9 @@ impl ParallelForceDispatcher {
             .store_bits
             .store(store as *const NativeStore as *mut u8 as usize, Ordering::Release);
         self.shared.g_bits.store(g.to_bits(), Ordering::Release);
+        // Publicar kernel del frame (0 = fuerza bruta) antes del incremento de
+        // época, para que los workers no reusen el kernel del dispatch anterior.
+        self.shared.kernel_bits.store(0, Ordering::Release);
 
         let (m, c) = &*self.inner;
         {

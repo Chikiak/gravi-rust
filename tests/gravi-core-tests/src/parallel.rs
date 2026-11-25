@@ -129,6 +129,53 @@ fn ac_barnes_hut_parallel_bit_identical_to_sequential() {
 }
 
 #[test]
+/// Regresión R6-02: tras un dispatch Barnes-Hut (kernel_bits=1), un dispatch de
+/// fuerza bruta sobre el mismo dispatcher debe publicar kernel=0 para que los
+/// workers calculen bruta y no reusen el traversal BH del frame anterior.
+fn ac_brute_tras_barnes_hut_usa_kernel_bruto() {
+    let n = 200;
+    let g = 1.0f32;
+    let softening = PhysicsConstants::default().softening;
+    let theta = PhysicsConstants::default().barnes_hut_theta;
+
+    // (a) Barnes-Hut primero: deja kernel_bits = 1 publicado en el dispatcher.
+    let bh_store = make_store_bh(n);
+    let (cx, cy, half) = root_from_live_bodies(&bh_store);
+    assert!(half > 0.0);
+    let mut bh_arena = QuadtreeArena::allocate(n).expect("arena");
+    let _ = build_quadtree(&bh_store, &mut bh_arena, cx, cy, half);
+    let _ = compute_quadtree_masses(&mut bh_arena, &bh_store);
+
+    let dispatcher = ParallelForceDispatcher::new(4);
+    dispatcher.compute_forces_barnes_hut_parallel(
+        &bh_arena,
+        &bh_store,
+        0,
+        n,
+        g,
+        softening,
+        theta,
+    );
+
+    // (b) Luego fuerza bruta sobre un store fresco con los mismos datos de cuerpos
+    //     (misma fórmula que make_store: x = i*0.7 - 50, mass = 1 + i*0.3).
+    let par = make_store(n);
+    dispatcher.compute_forces_parallel_range(&par, 0, n, g);
+    dispatcher.shutdown();
+    let par_fx = unsafe { std::slice::from_raw_parts(par.fx, n) }.to_vec();
+    let par_fy = unsafe { std::slice::from_raw_parts(par.fy, n) }.to_vec();
+
+    // (c) Referencia: bruta secuencial sobre store idéntico.
+    let seq = make_store(n);
+    compute_forces_brute_range(&seq, 0, n, n, g);
+    let seq_fx = unsafe { std::slice::from_raw_parts(seq.fx, n) }.to_vec();
+    let seq_fy = unsafe { std::slice::from_raw_parts(seq.fy, n) }.to_vec();
+
+    assert_eq!(seq_fx, par_fx, "Fx no bit-identico: bruta tras Barnes-Hut debe usar kernel bruto");
+    assert_eq!(seq_fy, par_fy, "Fy no bit-identico: bruta tras Barnes-Hut debe usar kernel bruto");
+}
+
+#[test]
 fn ac_barnes_hut_parallel_salta_muros() {
     let count = 200;
     let live = 100;
