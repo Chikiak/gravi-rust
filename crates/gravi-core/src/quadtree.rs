@@ -30,9 +30,12 @@ use std::ptr::NonNull;
 ///   16 count      i32  número de cuerpos en la celda (0 si vacía)
 ///   20 child_offset i32 — índice del primer hijo si `kind == Internal` (-1 si hoja)
 ///   24 body_index  i32 — índice del cuerpo si `kind == Leaf` y un solo cuerpo (-1 si no)
-///   28 kind       u32  0=Empty, 1=Leaf, 2=Internal, 3=LeafMulti (cabeca de cadena:
-///                      body_index = cabeza, child_offset = cuerpo siguiente de la cadena,
-///                      count = nº de cuerpos en la hoja multi).
+///   28 kind       u32  0=Empty, 1=Leaf, 2=Internal, 3=LeafMulti (cabeza de cadena:
+///                      body_index = cabeza de la cadena cuerpo-a-cuerpo,
+///                      child_offset = cola informativa de la cadena,
+///                      count = nº de cuerpos en la hoja multi; los enlaces
+///                      cuerpo-a-cuerpo viven en store.body_next, no en slots
+///                      consecutivos del arena).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct QuadNode {
@@ -229,6 +232,17 @@ pub fn build_quadtree(
         arena.next_free = 0;
         arena.root_index = -1;
 
+        // Reset de la cadena body_next (reusa el buffer existente,
+        // zero-allocation: no asigna, solo escribe -1 en cada slot).
+        {
+            let bn = store.body_next;
+            let mut k = 0usize;
+            while k < store.count {
+                *bn.add(k) = -1i32;
+                k += 1;
+            }
+        }
+
         let live_count = store.live_count;
         if live_count == 0 {
             return Ok(());
@@ -237,6 +251,7 @@ pub fn build_quadtree(
         let x = store.x;
         let y = store.y;
         let mass = store.mass;
+        let body_next = store.body_next;
         let live_indices = store.live_indices;
 
         // Nodo raíz.
@@ -263,7 +278,7 @@ pub fn build_quadtree(
             let bm = *mass.add(body_idx);
             insert_body_iterative(
                 arena, root_idx, body_idx, bx, by, bm,
-                root_cx, root_cy, root_half, 0, x, y, mass,
+                root_cx, root_cy, root_half, 0, x, y, mass, body_next,
             )?;
         }
         Ok(())
@@ -276,8 +291,9 @@ pub fn build_quadtree(
 /// un segundo cuerpo distinto pero no puede subdividirse
 /// (`child_half < MIN_CELL_SIZE * 0.5` o `depth >= MAX_QUADTREE_DEPTH`), se
 /// degrada a `LeafMulti` (kind=3): `body_index` es la cabeza de la cadena de
-/// cuerpos, `child_offset` apunta al siguiente cuerpo de la cadena (-1 = fin),
-/// `count` es el número de cuerpos y `mass` la suma. No se consumen nodos
+/// cuerpos, `child_offset` es la cola informativa de la cadena, `count` es el
+/// número de cuerpos y `mass` la suma. Los enlaces cuerpo-a-cuerpo viven en
+/// `store.body_next` (no se asumen slots consecutivos). No se consumen nodos
 /// extra, por lo que no genera `Overflow` por cuerpos coincidentes.
 #[inline(always)]
 fn insert_body_iterative(
@@ -294,6 +310,7 @@ fn insert_body_iterative(
     x: *mut f32,
     y: *mut f32,
     mass: *mut f32,
+    body_next: *mut i32,
 ) -> Result<(), QuadtreeError> {
     loop {
         let (node, kind) = unsafe {
@@ -350,6 +367,9 @@ fn insert_body_iterative(
                 if !can_subdivide {
                     // Degradar a LeafMulti: encadenar el cuerpo existente y el
                     // nuevo en este mismo nodo (no consume nodos extra).
+                    // body_index = cabeza (cuerpo previo), child_offset = cola
+                    // informativa (cuerpo nuevo); la cadena cuerpo-a-cuerpo vive
+                    // en store.body_next.
                     unsafe {
                         arena.write_node(
                             node_idx,
@@ -359,11 +379,13 @@ fn insert_body_iterative(
                                 half_size: half,
                                 mass: new_mass,
                                 count: new_count,
-                                child_offset: body_idx as i32, // siguiente: el cuerpo nuevo
-                                body_index: existing as i32,   // cabeza: el cuerpo previo
+                                child_offset: body_idx as i32, // cola informativa
+                                body_index: existing as i32,   // cabeza de cadena
                                 kind: 3,                       // LeafMulti
                             },
                         );
+                        *body_next.add(existing) = body_idx as i32;
+                        *body_next.add(body_idx) = -1i32;
                     }
                     break;
                 }
@@ -430,31 +452,31 @@ fn insert_body_iterative(
                     x,
                     y,
                     mass,
+                    body_next,
                 )?;
 
                 let q_new = quadrant_of(bx, by, cx, cy);
                 let (ncx, ncy, nhalf) = child_cell(cx, cy, half, q_new);
                 insert_body_iterative(
                     arena, child_base + q_new, body_idx, bx, by, bm,
-                    ncx, ncy, nhalf, depth + 1, x, y, mass,
+                    ncx, ncy, nhalf, depth + 1, x, y, mass, body_next,
                 )?;
                 break;
             }
-            3 => { // LeafMulti -> añadir cuerpo al rango de cuerpos encadenado
-                // body_index = primer cuerpo, child_offset = último cuerpo
-                // (inclusive). Los cuerpos se asumen con índices consecutivos
-                // de body_index a child_offset. count = n, mass = suma.
-                // Al degradar de Leaf (1 cuerpo) a LeafMulti (2 cuerpos):
-                //   body_index = cuerpo existente, child_offset = cuerpo nuevo.
-                // Al añadir un 3er+ cuerpo: child_offset se mueve al nuevo.
-                // No consume nodos extra.
+            3 => { // LeafMulti -> añadir cuerpo al final de la cadena cuerpo-a-cuerpo
+                // body_index = cabeza de la cadena, child_offset = cola
+                // informativa. La cadena vive en store.body_next (los slots de
+                // cuerpo NO son consecutivos: live_indices es una permutación).
                 unsafe {
+                    let tail = node.child_offset as usize;
+                    *body_next.add(tail) = body_idx as i32;
+                    *body_next.add(body_idx) = -1i32;
                     arena.write_node(
                         node_idx,
                         QuadNode {
                             mass: new_mass,
                             count: new_count,
-                            child_offset: body_idx as i32,
+                            child_offset: body_idx as i32, // nueva cola informativa
                             ..node
                         },
                     );
@@ -531,6 +553,7 @@ pub fn compute_quadtree_masses(
         let x = store.x;
         let y = store.y;
         let mass = store.mass;
+        let body_next = store.body_next;
 
         let mut stack: [PostOrderFrame; POST_ORDER_STACK_CAP] =
             [PostOrderFrame { node_idx: 0, next_child: 0 }; POST_ORDER_STACK_CAP];
@@ -561,25 +584,21 @@ pub fn compute_quadtree_masses(
                         },
                     );
                 }
-                3 => { // LeafMulti: suma la cadena de cuerpos (body_index..child_offset)
-                    let first = node.body_index as usize;
-                    let last = node.child_offset as usize;
+                3 => { // LeafMulti: recorre la cadena cuerpo a cuerpo (body_next)
                     let mut acc_mass: f32 = 0.0;
                     let mut acc_count: i32 = 0;
-                    if last >= first {
-                        let mut idx = first;
-                        while idx <= last {
-                            let m = *mass.add(idx);
-                            if m > 0.0 {
-                                acc_mass = acc_mass + m;
-                                acc_count = acc_count + 1;
-                            }
-                            idx += 1;
+                    let mut j = node.body_index as usize;
+                    loop {
+                        let m = *mass.add(j);
+                        if m > 0.0 {
+                            acc_mass = acc_mass + m;
+                            acc_count = acc_count + 1;
                         }
-                    } else {
-                        // Solo un cuerpo (child_offset == -1 heredado de Leaf).
-                        acc_mass = *mass.add(first);
-                        acc_count = 1;
+                        let nxt = *body_next.add(j);
+                        if nxt == -1i32 {
+                            break;
+                        }
+                        j = nxt as usize;
                     }
                     arena.write_node(
                         frame.node_idx,
@@ -784,6 +803,7 @@ pub fn compute_forces_barnes_hut_range(
         let mass = store.mass;
         let fx = store.fx;
         let fy = store.fy;
+        let body_next = store.body_next;
 
         let theta2 = theta * theta;
         let soft2 = softening * softening;
@@ -831,48 +851,53 @@ pub fn compute_forces_barnes_hut_range(
                         ax = ax + acc * dx;
                         ay = ay + acc * dy;
                     }
-                    3 => { // LeafMulti: recorrer la cadena cuerpo a cuerpo (sin monopolo)
-                        let first = node.body_index as usize;
-                        let last = node.child_offset as usize;
-                        if last >= first {
-                            let mut j = first;
-                            while j <= last {
+                    3 => { // LeafMulti: criterio de apertura + monopolo (o cadena exacta)
+                        // Criterio de apertura con geometría del nodo (mismo que Internal):
+                        //   s² < θ²·d², s = 2·half_size, d = distancia cuerpo al centro.
+                        let s = 2.0 * node.half_size;
+                        let s2 = s * s;
+                        let dx = node.center_x - ix;
+                        let dy = node.center_y - iy;
+                        let d2 = dx * dx + dy * dy;
+                        if s2 < theta2 * d2 {
+                            // Aceptar monopolo del nodo con masa agregada (node.mass).
+                            let mj = node.mass;
+                            if mj > 0.0 {
+                                let mut dist2 = d2 + soft2;
+                                if dist2 <= 0.0 {
+                                    dist2 = 1e-32f32;
+                                }
+                                let r2 = dist2.recip();
+                                let inv_dist3 = r2 * r2.sqrt();
+                                let acc = g * mj * inv_dist3;
+                                ax = ax + acc * dx;
+                                ay = ay + acc * dy;
+                            }
+                        } else {
+                            // Cadena exacta cuerpo a cuerpo (misma fórmula que kind 1).
+                            let mut j = node.body_index as usize;
+                            loop {
                                 if j != i {
                                     let mj = *mass.add(j);
                                     if mj > 0.0 {
-                                        let dx = *x.add(j) - ix;
-                                        let dy = *y.add(j) - iy;
-                                        let mut dist2 = dx * dx + dy * dy + soft2;
+                                        let dxj = *x.add(j) - ix;
+                                        let dyj = *y.add(j) - iy;
+                                        let mut dist2 = dxj * dxj + dyj * dyj + soft2;
                                         if dist2 <= 0.0 {
                                             dist2 = 1e-32f32;
                                         }
                                         let r2 = dist2.recip();
                                         let inv_dist3 = r2 * r2.sqrt();
                                         let acc = g * mj * inv_dist3;
-                                        ax = ax + acc * dx;
-                                        ay = ay + acc * dy;
+                                        ax = ax + acc * dxj;
+                                        ay = ay + acc * dyj;
                                     }
                                 }
-                                j += 1;
-                            }
-                        } else {
-                            // Solo un cuerpo (child_offset == -1 heredado de Leaf).
-                            let j = first;
-                            if j != i {
-                                let mj = *mass.add(j);
-                                if mj > 0.0 {
-                                    let dx = *x.add(j) - ix;
-                                    let dy = *y.add(j) - iy;
-                                    let mut dist2 = dx * dx + dy * dy + soft2;
-                                    if dist2 <= 0.0 {
-                                        dist2 = 1e-32f32;
-                                    }
-                                    let r2 = dist2.recip();
-                                    let inv_dist3 = r2 * r2.sqrt();
-                                    let acc = g * mj * inv_dist3;
-                                    ax = ax + acc * dx;
-                                    ay = ay + acc * dy;
+                                let nxt = *body_next.add(j);
+                                if nxt == -1i32 {
+                                    break;
                                 }
+                                j = nxt as usize;
                             }
                         }
                     }
