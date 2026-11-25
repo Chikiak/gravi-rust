@@ -78,7 +78,7 @@ Barnes-Hut + rebote, sin colisiones):
 |----|--------|------------|--------|-------------------|--------|
 | R6-01 | Monopolo para hojas multi-cuerpo en el traversal Barnes-Hut | — | M | R6-02, R6-03 | done |
 | R6-02 | El dispatch de fuerza bruta publica su kernel | — | S | R6-01, R6-03 | done |
-| R6-03 | Visibilidad del fallback escalar y subpasos sin realimentación | — | M | R6-01, R6-02 | todo |
+| R6-03 | Visibilidad del fallback escalar y subpasos sin realimentación | — | M | R6-01, R6-02 | done |
 
 ### Orden y dependencias
 

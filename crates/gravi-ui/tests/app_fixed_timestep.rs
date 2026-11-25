@@ -1,7 +1,7 @@
 //! Tests del acumulador de fixed timestep (R1-08).
 //! Lógica pura: no requiere ventana Raylib.
 
-use gravi_ui::app::fixed_timestep_substeps;
+use gravi_ui::app::{fixed_timestep_substeps, physics_substeps_policy};
 
 const DT: f32 = 1.0 / 60.0;
 
@@ -55,4 +55,28 @@ fn fixed_timestep_drena_recorte_descontrolado() {
     let n = fixed_timestep_substeps(&mut acc, DT, 30.0 * DT, 2);
     assert_eq!(n, 2, "tope de max_steps aunque el delta sea descontrolado");
     assert!((acc - 0.25).abs() < f32::EPSILON * 8.0, "acumulador recortado a 0.25 s, no desbocado");
+}
+
+#[test]
+fn policy_presupuesto_ok() {
+    // kt <= budget: tope 2, sin drenaje extra (residuo natural de fixed_timestep_substeps)
+    let (n, acc) = physics_substeps_policy(10, 16, 2.5 * DT, DT);
+    assert_eq!(n, 2, "kt dentro del presupuesto debe permitir hasta 2 subpasos");
+    assert!((acc - 0.5 * DT).abs() < f32::EPSILON * 8.0, "residuo sin drenaje extra");
+}
+
+#[test]
+fn policy_presupuesto_excedido() {
+    // kt > budget y acumulador > dt: exactamente 1 subpaso, residuo <= dt
+    let (n, acc) = physics_substeps_policy(20, 16, 2.5 * DT, DT);
+    assert_eq!(n, 1, "kt excede presupuesto -> 1 subpaso");
+    assert!(acc <= DT, "acumulador drenado a <= dt");
+}
+
+#[test]
+fn policy_delta_desbocado() {
+    // delta desbocado y kt > budget: 1 subpaso, residuo <= dt
+    let (n, acc) = physics_substeps_policy(20, 16, 30.0 * DT, DT);
+    assert_eq!(n, 1, "delta descontrolado con kt excedido -> 1 subpaso");
+    assert!(acc <= DT, "acumulador clampeado a <= dt aunque el delta sea desbocado");
 }

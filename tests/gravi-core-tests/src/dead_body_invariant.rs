@@ -1,10 +1,11 @@
 //! Test de invariante end-to-end "cuerpo muerto inerte" (R1-03, hallazgo 45).
 //! Solo API pública de gravi_core. Sin `rand`.
 
+use gravi_core::constants::SOFTENING_SQ;
+use gravi_core::diagnostics::compute_diagnostics;
 use gravi_core::simulation_store::{
     clear_forces, compute_forces_brute, integrate_symplectic_euler,
 };
-use gravi_core::diagnostics::compute_diagnostics;
 use gravi_core::store::NativeStore;
 
 const G: f32 = 1500.0f32;
@@ -161,4 +162,44 @@ fn diagnosticos_con_muerto_equivales_control() {
     assert_eq!(d.linear_momentum_y, c.linear_momentum_y);
     assert_eq!(d.center_of_mass_x, c.center_of_mass_x);
     assert_eq!(d.center_of_mass_y, c.center_of_mass_y);
+}
+
+#[test]
+fn brute_ignora_slots_muertos() {
+    let n_vivos = 5usize;
+    let dead_idx = n_vivos;
+
+    let mut store = make_store_con_muerto(n_vivos);
+
+    // live_count (5) != count (6) -> fuerza bruta usa el camino escalar que
+    // salta slots con mass < 0.
+    clear_forces(&mut store);
+    compute_forces_brute(&store, G);
+
+    let x = store.x_slice(); let y = store.y_slice(); let mass = store.mass_slice();
+    let fx = store.fx_slice(); let fy = store.fy_slice();
+
+    // Referencia: suma sobre cuerpos vivos solamente (idéntica al camino
+    // escalar, que omite objetivos y fuentes con mass < 0).
+    for i in 0..n_vivos {
+        let mut ref_x = 0.0f32;
+        let mut ref_y = 0.0f32;
+        let xi = x[i]; let yi = y[i];
+        for j in 0..n_vivos {
+            let dx = x[j] - xi;
+            let dy = y[j] - yi;
+            let r2 = dx * dx + dy * dy + SOFTENING_SQ;
+            let invr = 1.0f32 / r2.sqrt();
+            let invr3 = invr * invr * invr;
+            let f = G * mass[j] * invr3;
+            ref_x += f * dx;
+            ref_y += f * dy;
+        }
+        assert_eq!(fx[i], ref_x, "fuerza x viva {} no equivale a la suma sobre vivos", i);
+        assert_eq!(fy[i], ref_y, "fuerza y viva {} no equivale a la suma sobre vivos", i);
+    }
+
+    // El muerto no recibe fuerza.
+    assert_eq!(fx[dead_idx], 0.0);
+    assert_eq!(fy[dead_idx], 0.0);
 }

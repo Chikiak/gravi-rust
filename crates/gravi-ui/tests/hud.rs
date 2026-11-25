@@ -1,3 +1,4 @@
+use gravi_ui::app::hud_line1_label;
 use gravi_ui::physics_hud::{write_f32_fixed, write_line1, write_line2, write_u64};
 
 #[test]
@@ -49,4 +50,11 @@ fn timing_write_f32_fixed_100k() {
     }
     let elapsed = start.elapsed();
     println!("TIMING write_f32_fixed {} iters en {:?} ({} ns/call)", iters, elapsed, elapsed.as_nanos() / iters as u128);
+}
+
+#[test]
+fn hud_line1_label_table() {
+    assert_eq!(hud_line1_label("brute", 100, 100), "scalar");
+    assert_eq!(hud_line1_label("brute", 90, 100), "scalar-fallback");
+    assert_eq!(hud_line1_label("bhut", 90, 100), "scalar");
 }
